@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { resolve } from '$app/paths';
 	import { useQuery } from 'convex-svelte';
 	import { api } from '../convex/_generated/api.js';
 
@@ -7,6 +8,7 @@
 
 <h1>Information Society</h1>
 <p>Convex schema foundation is installed and ready for the MVP data model.</p>
+<p><a href={resolve('/chat')}>Open the agent chat workspace</a></p>
 
 {#if query.isLoading}
 	Loading...
