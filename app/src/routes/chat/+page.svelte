@@ -22,6 +22,8 @@
 
 	let draft = $state('');
 	let isSending = $state(false);
+	let isDevToolRunning = $state(false);
+	let devToolStatus = $state('');
 	let historyElement = $state<HTMLElement>();
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
@@ -85,6 +87,35 @@
 			isSending = false;
 		}
 	}
+
+	async function seedDevChat() {
+		if (isDevToolRunning) return;
+		isDevToolRunning = true;
+		devToolStatus = 'Seeding 50 development messages…';
+		try {
+			const result = await client.mutation(api.chat.seedDevData, {
+				count: 50,
+				confirm: 'SEED_DEV_CHAT_DATA'
+			});
+			devToolStatus = `Seeded ${result.insertedMessages} development messages.`;
+		} finally {
+			isDevToolRunning = false;
+		}
+	}
+
+	async function clearDevChat() {
+		if (isDevToolRunning) return;
+		isDevToolRunning = true;
+		devToolStatus = 'Clearing development chat data…';
+		try {
+			const result = await client.mutation(api.chat.clearDevData, {
+				confirm: 'CLEAR_DEV_CHAT_DATA'
+			});
+			devToolStatus = `Cleared ${result.deletedMessages} messages across ${result.deletedSessions} sessions.`;
+		} finally {
+			isDevToolRunning = false;
+		}
+	}
 </script>
 
 <svelte:head>
@@ -108,8 +139,20 @@
 					</button>
 				</div>
 			</div>
-			<a class="home-link" href={resolve('/')}>Home</a>
+			<div class="header-actions">
+				<button type="button" onclick={seedDevChat} disabled={isDevToolRunning}
+					>Seed dev chat</button
+				>
+				<button type="button" onclick={clearDevChat} disabled={isDevToolRunning}
+					>Clear dev chat</button
+				>
+				<a class="home-link" href={resolve('/')}>Home</a>
+			</div>
 		</header>
+
+		{#if devToolStatus}
+			<p class="dev-tool-status" aria-live="polite">{devToolStatus}</p>
+		{/if}
 
 		<div
 			class="message-history"
@@ -243,6 +286,7 @@
 
 	.date-button,
 	.home-link,
+	.header-actions button,
 	.composer button {
 		border: 0;
 		font: inherit;
@@ -271,11 +315,46 @@
 		color: #4f46e5;
 	}
 
+	.header-actions {
+		display: flex;
+		align-items: center;
+		gap: 0.55rem;
+	}
+
+	.header-actions button,
 	.home-link {
 		border-radius: 999px;
 		color: #64748b;
 		font-size: 0.9rem;
 		text-decoration: none;
+	}
+
+	.header-actions button {
+		border: 1px solid rgba(148, 163, 184, 0.28);
+		background: rgba(255, 255, 255, 0.68);
+		cursor: pointer;
+		padding: 0.45rem 0.7rem;
+	}
+
+	.header-actions button:hover:not(:disabled),
+	.header-actions button:focus-visible:not(:disabled) {
+		background: #eef2ff;
+		color: #4f46e5;
+	}
+
+	.header-actions button:disabled {
+		cursor: not-allowed;
+		opacity: 0.55;
+	}
+
+	.dev-tool-status {
+		margin: 0;
+		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+		background: rgba(238, 242, 255, 0.72);
+		padding: 0.55rem 1.5rem;
+		color: #4f46e5;
+		font-size: 0.85rem;
+		text-align: center;
 	}
 
 	.message-history {
@@ -430,6 +509,15 @@
 
 		.message-bubble {
 			max-width: 86%;
+		}
+
+		.header-actions {
+			gap: 0.35rem;
+		}
+
+		.header-actions button {
+			padding: 0.4rem 0.55rem;
+			font-size: 0.78rem;
 		}
 
 		.home-link {

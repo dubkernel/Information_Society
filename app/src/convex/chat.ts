@@ -12,6 +12,28 @@ const placeholderReplies = [
 	'Thanks. I can work with that context and help you move it forward.'
 ];
 
+const seedUserMessages = [
+	'I want to map out who I should reconnect with this week.',
+	'Can you help me think through a warm introduction?',
+	'I met someone at the alumni event and want to follow up well.',
+	'Which relationships have gone stale recently?',
+	'I need a concise note to send after coffee tomorrow.',
+	'Let’s organize my networking priorities by company.',
+	'I am trying to remember why this person was relevant.',
+	'Can you summarize the next best action from this thread?'
+];
+
+const seedAssistantMessages = [
+	'Absolutely — I’ll keep the relationship context organized as we go.',
+	'Yes. I’d start by identifying the specific outcome you want from that exchange.',
+	'Good idea. A short note with one concrete reference usually works best.',
+	'I can help you prioritize by recency, relevance, and strength of connection.',
+	'Let’s keep the message focused and easy for them to respond to.',
+	'I’m tracking that as useful context for future recommendations.',
+	'That sounds like a good candidate for a thoughtful follow-up.',
+	'We can turn that into a clear next step.'
+];
+
 async function getOrCreateDevUser(ctx: MutationCtx) {
 	const existing = await ctx.db
 		.query('users')
@@ -30,16 +52,10 @@ async function getOrCreateDevUser(ctx: MutationCtx) {
 	});
 }
 
-async function getOrCreateDevSession(ctx: MutationCtx) {
-	const userId = await getOrCreateDevUser(ctx);
-	const existing = await ctx.db
-		.query('conversationSessions')
-		.withIndex('byUserLastMessage', (q) => q.eq('userId', userId))
-		.order('desc')
-		.first();
-
-	if (existing) return { sessionId: existing._id, userId };
-
+async function createDevSession(
+	ctx: MutationCtx,
+	userId: Awaited<ReturnType<typeof getOrCreateDevUser>>
+) {
 	const now = Date.now();
 	const sessionId = await ctx.db.insert('conversationSessions', {
 		userId,
@@ -51,6 +67,52 @@ async function getOrCreateDevSession(ctx: MutationCtx) {
 	});
 
 	return { sessionId, userId };
+}
+
+async function getOrCreateDevSession(ctx: MutationCtx) {
+	const userId = await getOrCreateDevUser(ctx);
+	const existing = await ctx.db
+		.query('conversationSessions')
+		.withIndex('byUserLastMessage', (q) => q.eq('userId', userId))
+		.order('desc')
+		.first();
+
+	if (existing) return { sessionId: existing._id, userId };
+
+	return await createDevSession(ctx, userId);
+}
+
+async function clearDevChatData(ctx: MutationCtx) {
+	const user = await ctx.db
+		.query('users')
+		.withIndex('byAuthId', (q) => q.eq('authId', DEV_AUTH_ID))
+		.unique();
+
+	if (!user) return { deletedMessages: 0, deletedSessions: 0 };
+
+	let deletedMessages = 0;
+	const sessions = await ctx.db
+		.query('conversationSessions')
+		.withIndex('byUserLastMessage', (q) => q.eq('userId', user._id))
+		.take(100);
+
+	for (const session of sessions) {
+		const messages = await ctx.db
+			.query('messages')
+			.withIndex('byUserSession', (q) => q.eq('userId', user._id).eq('sessionId', session._id))
+			.take(200);
+
+		for (const message of messages) {
+			await ctx.db.delete(message._id);
+			deletedMessages += 1;
+		}
+	}
+
+	for (const session of sessions) {
+		await ctx.db.delete(session._id);
+	}
+
+	return { deletedMessages, deletedSessions: sessions.length };
 }
 
 function pickPlaceholderReply(text: string) {
@@ -81,6 +143,65 @@ export const listMessages = query({
 			.withIndex('byUserSession', (q) => q.eq('userId', user._id).eq('sessionId', session._id))
 			.order('asc')
 			.take(100);
+	}
+});
+
+export const clearDevData = mutation({
+	args: {
+		confirm: v.literal('CLEAR_DEV_CHAT_DATA')
+	},
+	handler: async (ctx) => {
+		return await clearDevChatData(ctx);
+	}
+});
+
+export const seedDevData = mutation({
+	args: {
+		count: v.optional(v.number()),
+		confirm: v.literal('SEED_DEV_CHAT_DATA')
+	},
+	handler: async (ctx, { count }) => {
+		await clearDevChatData(ctx);
+
+		const userId = await getOrCreateDevUser(ctx);
+		const { sessionId } = await createDevSession(ctx, userId);
+		const messageCount = Math.max(1, Math.min(50, Math.floor(count ?? 24)));
+		const startAt = Date.now() - 4 * 24 * 60 * 60 * 1000;
+		const spacing = Math.floor((4 * 24 * 60 * 60 * 1000) / messageCount);
+
+		for (let index = 0; index < messageCount; index += 1) {
+			const isUser = index % 2 === 0;
+			const timestamp = startAt + index * spacing;
+			const text = isUser
+				? seedUserMessages[index % seedUserMessages.length]
+				: seedAssistantMessages[index % seedAssistantMessages.length];
+
+			await ctx.db.insert(
+				'messages',
+				isUser
+					? {
+							userId,
+							sessionId,
+							role: 'user',
+							text,
+							status: 'complete',
+							timestamp
+						}
+					: {
+							userId,
+							sessionId,
+							role: 'assistant',
+							text,
+							provider: 'app',
+							model: 'placeholder-agent',
+							status: 'complete',
+							timestamp
+						}
+			);
+		}
+
+		await ctx.db.patch(sessionId, { lastMessageAt: startAt + (messageCount - 1) * spacing });
+		return { insertedMessages: messageCount, sessionId };
 	}
 });
 
