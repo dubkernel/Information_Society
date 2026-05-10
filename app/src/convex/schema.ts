@@ -154,6 +154,7 @@ export default defineSchema({
 		model: v.optional(v.string()),
 		status: v.optional(v.union(v.literal('pending'), v.literal('complete'), v.literal('failed'))),
 		error: v.optional(v.string()),
+		replyingToMessage: v.optional(v.id('messages')),
 		relatedPersonId: v.optional(v.id('people')),
 		relatedEventId: v.optional(v.id('events')),
 		timestamp: v.number()

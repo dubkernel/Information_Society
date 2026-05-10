@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { dev } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
 	import { useConvexClient, useQuery } from 'convex-svelte';
@@ -140,17 +141,19 @@
 				</div>
 			</div>
 			<div class="header-actions">
-				<button type="button" onclick={seedDevChat} disabled={isDevToolRunning}
-					>Seed dev chat</button
-				>
-				<button type="button" onclick={clearDevChat} disabled={isDevToolRunning}
-					>Clear dev chat</button
-				>
+				{#if dev}
+					<button type="button" onclick={seedDevChat} disabled={isDevToolRunning}
+						>Seed dev chat</button
+					>
+					<button type="button" onclick={clearDevChat} disabled={isDevToolRunning}
+						>Clear dev chat</button
+					>
+				{/if}
 				<a class="home-link" href={resolve('/')}>Home</a>
 			</div>
 		</header>
 
-		{#if devToolStatus}
+		{#if dev && devToolStatus}
 			<p class="dev-tool-status" aria-live="polite">{devToolStatus}</p>
 		{/if}
 
