@@ -4,12 +4,14 @@
 	import { tick } from 'svelte';
 	import { useConvexClient, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
+	import type { Id } from '../../convex/_generated/dataModel.js';
 
 	type ChatMessage = {
-		id: string;
+		id: Id<'messages'>;
 		role: 'user' | 'assistant' | 'system' | 'tool';
 		text: string;
 		timestamp: Date;
+		replyingToMessage?: Id<'messages'>;
 	};
 
 	type MessageDay = {
@@ -25,6 +27,7 @@
 	let isSending = $state(false);
 	let isDevToolRunning = $state(false);
 	let devToolStatus = $state('');
+	let replyingToMessageId = $state<Id<'messages'>>();
 	let historyElement = $state<HTMLElement>();
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
@@ -41,11 +44,13 @@
 			id: message._id,
 			role: message.role,
 			text: message.text,
-			timestamp: new Date(message.timestamp)
+			timestamp: new Date(message.timestamp),
+			replyingToMessage: message.replyingToMessage
 		}))
 	);
 	const currentDate = $derived(formatConversationDate(messages.at(-1)?.timestamp ?? new Date()));
 	const messageDays = $derived.by<MessageDay[]>(() => groupMessagesByDay(messages));
+	const replyTarget = $derived(messages.find((message) => message.id === replyingToMessageId));
 
 	function formatConversationDate(date: Date) {
 		return dayFormatter.format(date);
@@ -80,13 +85,22 @@
 
 		isSending = true;
 		try {
-			await client.mutation(api.chat.sendMessage, { text });
+			await client.mutation(api.chat.sendMessage, { text, replyingToMessage: replyingToMessageId });
 			draft = '';
+			replyingToMessageId = undefined;
 			await tick();
 			historyElement?.scrollTo({ top: historyElement.scrollHeight, behavior: 'smooth' });
 		} finally {
 			isSending = false;
 		}
+	}
+
+	function selectReplyTarget(message: ChatMessage) {
+		replyingToMessageId = message.id;
+	}
+
+	function clearReplyTarget() {
+		replyingToMessageId = undefined;
 	}
 
 	async function seedDevChat() {
@@ -175,11 +189,26 @@
 					<div class="day-divider"><span>{day.label}</span></div>
 					{#each day.messages as message (message.id)}
 						<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
-							<div class="message-bubble">
-								<p>{message.text}</p>
-								<time datetime={message.timestamp.toISOString()}
-									>{timeFormatter.format(message.timestamp)}</time
-								>
+							<div class="message-stack">
+								<div class="message-bubble">
+									{#if message.replyingToMessage}
+										<p class="reply-reference">Replying to earlier message</p>
+									{/if}
+									<p>{message.text}</p>
+									<time datetime={message.timestamp.toISOString()}
+										>{timeFormatter.format(message.timestamp)}</time
+									>
+								</div>
+								{#if message.role === 'assistant'}
+									<button
+										class="reply-button"
+										type="button"
+										onclick={() => selectReplyTarget(message)}
+										aria-label={`Reply to assistant message: ${message.text}`}
+									>
+										Reply
+									</button>
+								{/if}
 							</div>
 						</article>
 					{/each}
@@ -195,6 +224,14 @@
 				sendMessage();
 			}}
 		>
+			{#if replyTarget}
+				<div class="reply-preview">
+					<span>Replying to: {replyTarget.text}</span>
+					<button type="button" onclick={clearReplyTarget} aria-label="Cancel reply target"
+						>Cancel</button
+					>
+				</div>
+			{/if}
 			<label class="sr-only" for="message-draft">Message the agent</label>
 			<textarea
 				id="message-draft"
@@ -412,8 +449,17 @@
 		justify-content: center;
 	}
 
-	.message-bubble {
+	.message-stack {
+		display: grid;
 		max-width: min(75%, 42rem);
+		gap: 0.25rem;
+	}
+
+	.message-row.user .message-stack {
+		justify-items: end;
+	}
+
+	.message-bubble {
 		border-radius: 1.35rem;
 		background: #f1f5f9;
 		padding: 0.75rem 0.9rem 0.55rem;
@@ -425,8 +471,11 @@
 		color: white;
 	}
 
-	.message-row.system .message-bubble {
+	.message-row.system .message-stack {
 		max-width: 90%;
+	}
+
+	.message-row.system .message-bubble {
 		background: rgba(226, 232, 240, 0.7);
 		color: #64748b;
 		text-align: center;
@@ -437,6 +486,14 @@
 		line-height: 1.45;
 	}
 
+	.message-bubble .reply-reference {
+		margin-bottom: 0.35rem;
+		border-left: 2px solid currentColor;
+		padding-left: 0.45rem;
+		opacity: 0.7;
+		font-size: 0.78rem;
+	}
+
 	.message-bubble time {
 		display: block;
 		margin-top: 0.35rem;
@@ -445,9 +502,57 @@
 		text-align: right;
 	}
 
+	.reply-button {
+		width: fit-content;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: #64748b;
+		cursor: pointer;
+		font: inherit;
+		font-size: 0.78rem;
+		padding: 0.2rem 0.45rem;
+	}
+
+	.reply-button:hover,
+	.reply-button:focus-visible {
+		background: #eef2ff;
+		color: #4f46e5;
+	}
+
 	.composer {
+		flex-wrap: wrap;
 		border-top: 1px solid rgba(148, 163, 184, 0.18);
 		background: rgba(255, 255, 255, 0.72);
+	}
+
+	.reply-preview {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		justify-content: space-between;
+		gap: 1rem;
+		border-left: 3px solid #4f46e5;
+		border-radius: 0.8rem;
+		background: #eef2ff;
+		padding: 0.55rem 0.7rem;
+		color: #4338ca;
+		font-size: 0.85rem;
+	}
+
+	.reply-preview span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.reply-preview button {
+		border: 0;
+		background: transparent;
+		color: #4338ca;
+		cursor: pointer;
+		font: inherit;
+		font-weight: 700;
 	}
 
 	.composer textarea {
@@ -510,7 +615,7 @@
 			border-radius: 0;
 		}
 
-		.message-bubble {
+		.message-stack {
 			max-width: 86%;
 		}
 

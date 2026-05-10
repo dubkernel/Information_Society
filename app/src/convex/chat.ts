@@ -207,9 +207,10 @@ export const seedDevData = mutation({
 
 export const sendMessage = mutation({
 	args: {
-		text: v.string()
+		text: v.string(),
+		replyingToMessage: v.optional(v.id('messages'))
 	},
-	handler: async (ctx, { text }) => {
+	handler: async (ctx, { text, replyingToMessage }) => {
 		const trimmed = text.trim();
 		if (!trimmed) return null;
 
@@ -221,6 +222,7 @@ export const sendMessage = mutation({
 			sessionId,
 			role: 'user',
 			text: trimmed,
+			replyingToMessage,
 			status: 'complete',
 			timestamp: now
 		});
