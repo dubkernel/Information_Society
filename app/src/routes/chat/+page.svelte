@@ -9,6 +9,12 @@
 		timestamp: Date;
 	};
 
+	type MessageDay = {
+		dateKey: string;
+		label: string;
+		messages: ChatMessage[];
+	};
+
 	const initialMessages: ChatMessage[] = [
 		{
 			id: 'm-1',
@@ -39,16 +45,45 @@
 	let messages = $state<ChatMessage[]>(initialMessages);
 	let draft = $state('');
 	let historyElement = $state<HTMLElement>();
-	const currentDate = new Intl.DateTimeFormat('en', {
+
+	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
 		month: 'long',
 		day: 'numeric'
-	}).format(initialMessages.at(-1)?.timestamp ?? new Date());
-
+	});
 	const timeFormatter = new Intl.DateTimeFormat('en', {
 		hour: 'numeric',
 		minute: '2-digit'
 	});
+	const currentDate = $derived(formatConversationDate(messages.at(-1)?.timestamp ?? new Date()));
+	const messageDays = $derived.by<MessageDay[]>(() => groupMessagesByDay(messages));
+
+	function formatConversationDate(date: Date) {
+		return dayFormatter.format(date);
+	}
+
+	function dateKey(date: Date) {
+		return date.toISOString().slice(0, 10);
+	}
+
+	function groupMessagesByDay(chatMessages: ChatMessage[]) {
+		return chatMessages.reduce<MessageDay[]>((days, message) => {
+			const key = dateKey(message.timestamp);
+			const currentDay = days.at(-1);
+
+			if (currentDay?.dateKey === key) {
+				currentDay.messages.push(message);
+				return days;
+			}
+
+			days.push({
+				dateKey: key,
+				label: formatConversationDate(message.timestamp),
+				messages: [message]
+			});
+			return days;
+		}, []);
+	}
 
 	async function sendDemoMessage() {
 		const text = draft.trim();
@@ -98,17 +133,20 @@
 			bind:this={historyElement}
 			role="log"
 			aria-label="Conversation history"
+			aria-live="polite"
 		>
-			<div class="day-divider"><span>{currentDate}</span></div>
-			{#each messages as message (message.id)}
-				<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
-					<div class="message-bubble">
-						<p>{message.text}</p>
-						<time datetime={message.timestamp.toISOString()}
-							>{timeFormatter.format(message.timestamp)}</time
-						>
-					</div>
-				</article>
+			{#each messageDays as day (day.dateKey)}
+				<div class="day-divider"><span>{day.label}</span></div>
+				{#each day.messages as message (message.id)}
+					<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
+						<div class="message-bubble">
+							<p>{message.text}</p>
+							<time datetime={message.timestamp.toISOString()}
+								>{timeFormatter.format(message.timestamp)}</time
+							>
+						</div>
+					</article>
+				{/each}
 			{/each}
 		</div>
 
