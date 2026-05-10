@@ -1,10 +1,12 @@
 <script lang="ts">
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
+	import { useConvexClient, useQuery } from 'convex-svelte';
+	import { api } from '../../convex/_generated/api.js';
 
 	type ChatMessage = {
 		id: string;
-		role: 'user' | 'assistant' | 'system';
+		role: 'user' | 'assistant' | 'system' | 'tool';
 		text: string;
 		timestamp: Date;
 	};
@@ -15,35 +17,11 @@
 		messages: ChatMessage[];
 	};
 
-	const initialMessages: ChatMessage[] = [
-		{
-			id: 'm-1',
-			role: 'assistant',
-			text: 'Good morning — I’m ready whenever you are.',
-			timestamp: new Date('2026-05-09T09:16:00')
-		},
-		{
-			id: 'm-2',
-			role: 'user',
-			text: 'I want to talk through my outreach plan for this week.',
-			timestamp: new Date('2026-05-09T09:17:00')
-		},
-		{
-			id: 'm-3',
-			role: 'assistant',
-			text: 'Absolutely. Send me the details and I’ll help you organize the next step.',
-			timestamp: new Date('2026-05-09T09:17:30')
-		},
-		{
-			id: 'm-4',
-			role: 'system',
-			text: 'The agent is ready to use recent conversation context.',
-			timestamp: new Date('2026-05-09T09:18:00')
-		}
-	];
+	const client = useConvexClient();
+	const persistedMessages = useQuery(api.chat.listMessages, {});
 
-	let messages = $state<ChatMessage[]>(initialMessages);
 	let draft = $state('');
+	let isSending = $state(false);
 	let historyElement = $state<HTMLElement>();
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
@@ -55,6 +33,14 @@
 		hour: 'numeric',
 		minute: '2-digit'
 	});
+	const messages = $derived.by<ChatMessage[]>(() =>
+		(persistedMessages.data ?? []).map((message) => ({
+			id: message._id,
+			role: message.role,
+			text: message.text,
+			timestamp: new Date(message.timestamp)
+		}))
+	);
 	const currentDate = $derived(formatConversationDate(messages.at(-1)?.timestamp ?? new Date()));
 	const messageDays = $derived.by<MessageDay[]>(() => groupMessagesByDay(messages));
 
@@ -85,22 +71,19 @@
 		}, []);
 	}
 
-	async function sendDemoMessage() {
+	async function sendMessage() {
 		const text = draft.trim();
-		if (!text) return;
+		if (!text || isSending) return;
 
-		messages = [
-			...messages,
-			{
-				id: `local-${Date.now()}`,
-				role: 'user',
-				text,
-				timestamp: new Date()
-			}
-		];
-		draft = '';
-		await tick();
-		historyElement?.scrollTo({ top: historyElement.scrollHeight, behavior: 'smooth' });
+		isSending = true;
+		try {
+			await client.mutation(api.chat.sendMessage, { text });
+			draft = '';
+			await tick();
+			historyElement?.scrollTo({ top: historyElement.scrollHeight, behavior: 'smooth' });
+		} finally {
+			isSending = false;
+		}
 	}
 </script>
 
@@ -135,19 +118,27 @@
 			aria-label="Conversation history"
 			aria-live="polite"
 		>
-			{#each messageDays as day (day.dateKey)}
-				<div class="day-divider"><span>{day.label}</span></div>
-				{#each day.messages as message (message.id)}
-					<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
-						<div class="message-bubble">
-							<p>{message.text}</p>
-							<time datetime={message.timestamp.toISOString()}
-								>{timeFormatter.format(message.timestamp)}</time
-							>
-						</div>
-					</article>
+			{#if persistedMessages.isLoading}
+				<p class="empty-state">Loading conversation…</p>
+			{:else if persistedMessages.error}
+				<p class="empty-state">Unable to load conversation. {persistedMessages.error.toString()}</p>
+			{:else if messageDays.length === 0}
+				<p class="empty-state">Start the conversation by sending a message.</p>
+			{:else}
+				{#each messageDays as day (day.dateKey)}
+					<div class="day-divider"><span>{day.label}</span></div>
+					{#each day.messages as message (message.id)}
+						<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
+							<div class="message-bubble">
+								<p>{message.text}</p>
+								<time datetime={message.timestamp.toISOString()}
+									>{timeFormatter.format(message.timestamp)}</time
+								>
+							</div>
+						</article>
+					{/each}
 				{/each}
-			{/each}
+			{/if}
 		</div>
 
 		<form
@@ -155,7 +146,7 @@
 			aria-label="Message composer"
 			onsubmit={(event) => {
 				event.preventDefault();
-				sendDemoMessage();
+				sendMessage();
 			}}
 		>
 			<label class="sr-only" for="message-draft">Message the agent</label>
@@ -166,7 +157,9 @@
 				rows="1"
 				aria-label="Message the agent"
 			></textarea>
-			<button type="submit" disabled={!draft.trim()}>Send</button>
+			<button type="submit" disabled={!draft.trim() || isSending}>
+				{isSending ? 'Sending…' : 'Send'}
+			</button>
 		</form>
 	</section>
 </main>
@@ -315,6 +308,13 @@
 		color: #64748b;
 		font-size: 0.78rem;
 		box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+	}
+
+	.empty-state {
+		margin: 4rem auto;
+		max-width: 24rem;
+		color: #64748b;
+		text-align: center;
 	}
 
 	.message-row {
