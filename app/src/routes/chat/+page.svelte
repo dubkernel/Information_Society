@@ -29,6 +29,7 @@
 	let devToolStatus = $state('');
 	let replyingToMessageId = $state<Id<'messages'>>();
 	let historyElement = $state<HTMLElement>();
+	let isDateMenuOpen = $state(false);
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
@@ -103,6 +104,25 @@
 		replyingToMessageId = undefined;
 	}
 
+	function toggleDateMenu() {
+		isDateMenuOpen = !isDateMenuOpen;
+	}
+
+	async function jumpToDate(day: MessageDay) {
+		isDateMenuOpen = false;
+		await tick();
+
+		const target = historyElement?.querySelector<HTMLElement>(`[data-date-key="${day.dateKey}"]`);
+		target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+	}
+
+	async function handleDateKeydown(event: KeyboardEvent, day: MessageDay) {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+
+		event.preventDefault();
+		await jumpToDate(day);
+	}
+
 	async function seedDevChat() {
 		if (isDevToolRunning) return;
 		isDevToolRunning = true;
@@ -146,12 +166,40 @@
 		<header class="chat-header">
 			<div class="agent-lockup">
 				<div class="agent-avatar" aria-hidden="true">IS</div>
-				<div>
+				<div class="date-menu-anchor">
 					<h1 id="chat-title">Agent Chat</h1>
-					<button class="date-button" type="button" aria-label="Open conversation date menu">
+					<button
+						class="date-button"
+						type="button"
+						aria-label="Open conversation date menu"
+						aria-haspopup="listbox"
+						aria-expanded={isDateMenuOpen}
+						onclick={toggleDateMenu}
+					>
 						{currentDate}
 						<span aria-hidden="true">⌄</span>
 					</button>
+					{#if isDateMenuOpen}
+						<div class="date-menu" role="listbox" aria-label="Conversation dates">
+							{#if messageDays.length === 0}
+								<p>No messages yet</p>
+							{:else}
+								{#each messageDays as day (day.dateKey)}
+									<button
+										class="date-option"
+										type="button"
+										role="option"
+										aria-selected={day.label === currentDate}
+										onclick={() => jumpToDate(day)}
+										onkeydown={(event) => handleDateKeydown(event, day)}
+									>
+										<span>{day.label}</span>
+										<small>{day.messages.length} messages</small>
+									</button>
+								{/each}
+							{/if}
+						</div>
+					{/if}
 				</div>
 			</div>
 			<div class="header-actions">
@@ -186,7 +234,13 @@
 				<p class="empty-state">Start the conversation by sending a message.</p>
 			{:else}
 				{#each messageDays as day (day.dateKey)}
-					<div class="day-divider"><span>{day.label}</span></div>
+					<div
+						class="day-divider"
+						data-date-key={day.dateKey}
+						aria-label={`Messages from ${day.label}`}
+					>
+						<span>{day.label}</span>
+					</div>
 					{#each day.messages as message (message.id)}
 						<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
 							<div class="message-stack">
@@ -336,6 +390,11 @@
 			box-shadow 160ms ease;
 	}
 
+	.date-menu-anchor {
+		position: relative;
+		min-width: 0;
+	}
+
 	.date-button {
 		display: inline-flex;
 		align-items: center;
@@ -346,6 +405,58 @@
 		color: #64748b;
 		cursor: pointer;
 		font-size: 0.9rem;
+	}
+
+	.date-menu {
+		position: absolute;
+		top: calc(100% + 0.5rem);
+		left: 0;
+		z-index: 5;
+		display: grid;
+		width: min(18rem, calc(100vw - 2rem));
+		max-height: min(20rem, 50vh);
+		overflow-y: auto;
+		border: 1px solid rgba(148, 163, 184, 0.28);
+		border-radius: 1rem;
+		background: rgba(255, 255, 255, 0.98);
+		box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16);
+		padding: 0.35rem;
+	}
+
+	.date-menu p {
+		margin: 0;
+		padding: 0.75rem;
+		color: #64748b;
+		font-size: 0.86rem;
+	}
+
+	.date-option {
+		display: flex;
+		width: 100%;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.75rem;
+		border: 0;
+		border-radius: 0.75rem;
+		background: transparent;
+		color: #111827;
+		cursor: pointer;
+		font: inherit;
+		padding: 0.65rem 0.75rem;
+		text-align: left;
+	}
+
+	.date-option:hover,
+	.date-option:focus-visible,
+	.date-option[aria-selected='true'] {
+		background: #eef2ff;
+		color: #4338ca;
+	}
+
+	.date-option small {
+		flex: 0 0 auto;
+		color: #64748b;
+		font-size: 0.72rem;
 	}
 
 	.date-button:hover,
@@ -414,6 +525,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
+		scroll-margin-top: 1rem;
 		display: flex;
 		justify-content: center;
 		padding: 0.25rem 0 1rem;
