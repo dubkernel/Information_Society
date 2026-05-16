@@ -259,10 +259,15 @@
 			role="log"
 			aria-label="Conversation history"
 			aria-live="polite"
+			aria-busy={persistedMessages.isLoading}
 			onscroll={updateActiveDateFromScroll}
 		>
 			{#if persistedMessages.isLoading}
-				<p class="empty-state">Loading conversation…</p>
+				<div class="message-skeletons" aria-label="Loading conversation">
+					<div class="skeleton-message assistant"></div>
+					<div class="skeleton-message user"></div>
+					<div class="skeleton-message assistant short"></div>
+				</div>
 			{:else if persistedMessages.error}
 				<p class="empty-state">Unable to load conversation. {persistedMessages.error.toString()}</p>
 			{:else if messageDays.length === 0}
@@ -583,6 +588,43 @@
 		text-align: center;
 	}
 
+	.message-skeletons {
+		display: grid;
+		min-height: 14rem;
+		align-content: start;
+		gap: 0.75rem;
+		padding-top: 2.5rem;
+	}
+
+	.skeleton-message {
+		width: min(72%, 32rem);
+		height: 3.7rem;
+		border-radius: 1.35rem;
+		background: linear-gradient(90deg, #eef2ff 0%, #f8fafc 48%, #eef2ff 100%);
+		background-size: 200% 100%;
+		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+		animation: skeleton-shimmer 1.6s ease-in-out infinite;
+	}
+
+	.skeleton-message.user {
+		justify-self: end;
+		width: min(58%, 28rem);
+	}
+
+	.skeleton-message.short {
+		width: min(48%, 22rem);
+	}
+
+	@keyframes skeleton-shimmer {
+		0% {
+			background-position: 100% 0;
+		}
+
+		100% {
+			background-position: -100% 0;
+		}
+	}
+
 	.message-row {
 		display: flex;
 		margin: 0.45rem 0;
@@ -786,6 +828,7 @@
 		*::after {
 			scroll-behavior: auto !important;
 			transition-duration: 0.01ms !important;
+			animation-duration: 0.01ms !important;
 		}
 	}
 </style>
