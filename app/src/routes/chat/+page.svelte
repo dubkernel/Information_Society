@@ -30,6 +30,7 @@
 	let replyingToMessageId = $state<Id<'messages'>>();
 	let historyElement = $state<HTMLElement>();
 	let isDateMenuOpen = $state(false);
+	let activeDateKey = $state<string>();
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
@@ -49,9 +50,23 @@
 			replyingToMessage: message.replyingToMessage
 		}))
 	);
-	const currentDate = $derived(formatConversationDate(messages.at(-1)?.timestamp ?? new Date()));
 	const messageDays = $derived.by<MessageDay[]>(() => groupMessagesByDay(messages));
+	const activeDay = $derived(messageDays.find((day) => day.dateKey === activeDateKey));
+	const currentDate = $derived(
+		activeDay?.label ?? formatConversationDate(messages.at(-1)?.timestamp ?? new Date())
+	);
 	const replyTarget = $derived(messages.find((message) => message.id === replyingToMessageId));
+
+	$effect(() => {
+		if (messageDays.length === 0) {
+			activeDateKey = undefined;
+			return;
+		}
+
+		if (!activeDateKey || !messageDays.some((day) => day.dateKey === activeDateKey)) {
+			activeDateKey = messageDays.at(-1)?.dateKey;
+		}
+	});
 
 	function formatConversationDate(date: Date) {
 		return dayFormatter.format(date);
@@ -109,11 +124,30 @@
 	}
 
 	async function jumpToDate(day: MessageDay) {
+		activeDateKey = day.dateKey;
 		isDateMenuOpen = false;
 		await tick();
 
 		const target = historyElement?.querySelector<HTMLElement>(`[data-date-key="${day.dateKey}"]`);
 		target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+	}
+
+	function updateActiveDateFromScroll() {
+		if (!historyElement || messageDays.length === 0) return;
+
+		const historyTop = historyElement.getBoundingClientRect().top;
+		let visibleDateKey = messageDays[0]?.dateKey;
+
+		for (const day of messageDays) {
+			const divider = historyElement.querySelector<HTMLElement>(`[data-date-key="${day.dateKey}"]`);
+			if (!divider) continue;
+
+			if (divider.getBoundingClientRect().top - historyTop <= 12) {
+				visibleDateKey = day.dateKey;
+			}
+		}
+
+		activeDateKey = visibleDateKey;
 	}
 
 	async function handleDateKeydown(event: KeyboardEvent, day: MessageDay) {
@@ -225,6 +259,7 @@
 			role="log"
 			aria-label="Conversation history"
 			aria-live="polite"
+			onscroll={updateActiveDateFromScroll}
 		>
 			{#if persistedMessages.isLoading}
 				<p class="empty-state">Loading conversation…</p>
