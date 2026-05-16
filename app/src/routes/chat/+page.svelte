@@ -10,6 +10,7 @@
 		id: Id<'messages'>;
 		role: 'user' | 'assistant' | 'system' | 'tool';
 		text: string;
+		status?: 'pending' | 'complete' | 'failed';
 		timestamp: Date;
 		replyingToMessage?: Id<'messages'>;
 	};
@@ -47,6 +48,7 @@
 			id: message._id,
 			role: message.role,
 			text: message.text,
+			status: message.status,
 			timestamp: new Date(message.timestamp),
 			replyingToMessage: message.replyingToMessage
 		}))
@@ -114,7 +116,7 @@
 
 		isSending = true;
 		try {
-			await client.mutation(api.chat.sendMessage, {
+			const result = await client.mutation(api.chat.sendMessage, {
 				clientSessionId,
 				text,
 				replyingToMessage: replyingToMessageId
@@ -123,6 +125,14 @@
 			replyingToMessageId = undefined;
 			await tick();
 			historyElement?.scrollTo({ top: historyElement.scrollHeight, behavior: 'smooth' });
+
+			if (result) {
+				await client.mutation(api.chat.completePlaceholderReply, {
+					clientSessionId,
+					pendingAssistantMessageId: result.pendingAssistantMessageId,
+					text: result.placeholderText
+				});
+			}
 		} finally {
 			isSending = false;
 		}
@@ -308,6 +318,9 @@
 										<p class="reply-reference">Replying to earlier message</p>
 									{/if}
 									<p>{message.text}</p>
+									{#if message.status === 'pending'}
+										<p class="message-status" aria-live="polite">Assistant response pending…</p>
+									{/if}
 									<time datetime={message.timestamp.toISOString()}
 										>{timeFormatter.format(message.timestamp)}</time
 									>
@@ -714,6 +727,13 @@
 		padding-left: 0.45rem;
 		opacity: 0.7;
 		font-size: 0.78rem;
+	}
+
+	.message-bubble .message-status {
+		margin-top: 0.35rem;
+		opacity: 0.72;
+		font-size: 0.78rem;
+		font-style: italic;
 	}
 
 	.message-bubble time {

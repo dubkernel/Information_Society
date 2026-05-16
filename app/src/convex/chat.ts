@@ -7,6 +7,21 @@ import { buildAgentContextPayload, contextWindowConfig } from './chatContext';
 const DEV_SESSION_TITLE = 'Agent Chat';
 const REFRESH_MESSAGE_TEXT = 'The agent is working on refreshing themselves on the topic.';
 
+export type PlaceholderAgentRequest = {
+	triggerMessageId: Id<'messages'>;
+	pendingAssistantMessageId: Id<'messages'>;
+	contextMessageIds: Id<'messages'>[];
+	replyContextMessageIds: Id<'messages'>[];
+	groupedMessageIds: Id<'messages'>[];
+	userText: string;
+};
+
+export type PlaceholderAgentResult = {
+	pendingAssistantMessageId: Id<'messages'>;
+	text: string;
+	status: 'complete';
+};
+
 const placeholderReplies = [
 	'I hear you. I’m keeping track and will help you shape the next step.',
 	'That makes sense. Tell me a little more and I’ll help organize it.',
@@ -310,14 +325,14 @@ export const sendMessage = mutation({
 			replyContextMessageIds: agentContext.replyContextMessageIds
 		});
 
-		await ctx.db.insert('messages', {
+		const pendingAssistantMessageId = await ctx.db.insert('messages', {
 			userId,
 			sessionId,
 			role: 'assistant',
-			text: pickPlaceholderReply(trimmed, agentContext.consecutiveUserMessageIds.length),
+			text: 'Thinking through that context…',
 			provider: 'app',
 			model: 'placeholder-agent',
-			status: 'complete',
+			status: 'pending',
 			source: 'assistant_placeholder',
 			isAutomated: false,
 			contextWindowMessageIds: agentContext.messageIds,
@@ -327,7 +342,60 @@ export const sendMessage = mutation({
 		});
 
 		await ctx.db.patch(sessionId, { lastMessageAt: now + 1 });
-		return { userMessageId, agentContext };
+		const placeholderRequest: PlaceholderAgentRequest = {
+			triggerMessageId: userMessageId,
+			pendingAssistantMessageId,
+			contextMessageIds: agentContext.messageIds,
+			replyContextMessageIds: agentContext.replyContextMessageIds,
+			groupedMessageIds: agentContext.consecutiveUserMessageIds,
+			userText: trimmed
+		};
+
+		return {
+			userMessageId,
+			pendingAssistantMessageId,
+			agentContext,
+			placeholderRequest,
+			placeholderText: pickPlaceholderReply(trimmed, agentContext.consecutiveUserMessageIds.length)
+		};
+	}
+});
+
+export const completePlaceholderReply = mutation({
+	args: {
+		clientSessionId: v.optional(v.string()),
+		pendingAssistantMessageId: v.id('messages'),
+		text: v.string()
+	},
+	handler: async (ctx, { clientSessionId, pendingAssistantMessageId, text }) => {
+		const trimmed = text.trim();
+		if (!trimmed) throw new Error('Placeholder reply text is required.');
+
+		const scope = await getAuthScope(ctx, clientSessionId);
+		const user = await getExistingUser(ctx, scope.authId);
+		if (!user) throw new Error('Chat user does not exist.');
+
+		const pendingMessage = await ctx.db.get(pendingAssistantMessageId);
+		if (
+			!pendingMessage ||
+			pendingMessage.userId !== user._id ||
+			pendingMessage.role !== 'assistant' ||
+			pendingMessage.source !== 'assistant_placeholder' ||
+			pendingMessage.status !== 'pending'
+		) {
+			throw new Error('Pending placeholder reply was not found for this chat session.');
+		}
+
+		await ctx.db.patch(pendingAssistantMessageId, {
+			text: trimmed,
+			status: 'complete'
+		});
+
+		return {
+			pendingAssistantMessageId,
+			text: trimmed,
+			status: 'complete'
+		} satisfies PlaceholderAgentResult;
 	}
 });
 
