@@ -12,6 +12,7 @@ export type PlaceholderAgentRequest = {
 	pendingAssistantMessageId: Id<'messages'>;
 	contextMessageIds: Id<'messages'>[];
 	replyContextMessageIds: Id<'messages'>[];
+	replyTargetId?: Id<'messages'>;
 	groupedMessageIds: Id<'messages'>[];
 	userText: string;
 };
@@ -453,6 +454,7 @@ export const sendMessage = mutation({
 			pendingAssistantMessageId,
 			contextMessageIds: agentContext.messageIds,
 			replyContextMessageIds: agentContext.replyContextMessageIds,
+			replyTargetId: agentContext.replyTargetId,
 			groupedMessageIds: agentContext.consecutiveUserMessageIds,
 			userText: trimmed
 		};

@@ -58,7 +58,10 @@
 	const currentDate = $derived(
 		activeDay?.label ?? formatConversationDate(messages.at(-1)?.timestamp ?? new Date())
 	);
-	const replyTarget = $derived(messages.find((message) => message.id === replyingToMessageId));
+	const messagesById = $derived(new Map(messages.map((message) => [message.id, message])));
+	const replyTarget = $derived(
+		replyingToMessageId ? messagesById.get(replyingToMessageId) : undefined
+	);
 
 	$effect(() => {
 		if (messageDays.length === 0) {
@@ -139,6 +142,29 @@
 
 	function selectReplyTarget(message: ChatMessage) {
 		replyingToMessageId = message.id;
+	}
+
+	function getReplyLabel(message?: ChatMessage) {
+		if (!message) return 'Original message unavailable';
+		return `${message.role === 'user' ? 'You' : 'Agent'}: ${message.text}`;
+	}
+
+	function getReplyExcerpt(message?: ChatMessage) {
+		return message?.text ?? 'This message is no longer in the loaded history.';
+	}
+
+	async function jumpToMessage(messageId: Id<'messages'>) {
+		await tick();
+		const target = historyElement?.querySelector<HTMLElement>(`[data-message-id="${messageId}"]`);
+		target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+		target?.animate(
+			[
+				{ transform: 'scale(1)', filter: 'brightness(1)' },
+				{ transform: 'scale(1.012)', filter: 'brightness(1.04)' },
+				{ transform: 'scale(1)', filter: 'brightness(1)' }
+			],
+			{ duration: 520, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+		);
 	}
 
 	function clearReplyTarget() {
@@ -310,11 +336,25 @@
 						<span>{day.label}</span>
 					</div>
 					{#each day.messages as message (message.id)}
-						<article class={`message-row ${message.role}`} aria-label={`${message.role} message`}>
+						{@const referencedMessage = message.replyingToMessage
+							? messagesById.get(message.replyingToMessage)
+							: undefined}
+						<article
+							class={`message-row ${message.role}`}
+							aria-label={`${message.role} message`}
+							data-message-id={message.id}
+						>
 							<div class="message-stack">
 								<div class="message-bubble">
 									{#if message.replyingToMessage}
-										<p class="reply-reference">Replying to earlier message</p>
+										<button
+											class="reply-reference"
+											type="button"
+											onclick={() => jumpToMessage(message.replyingToMessage!)}
+											aria-label={`Jump to replied message: ${getReplyExcerpt(referencedMessage)}`}
+										>
+											<span>↩ {getReplyLabel(referencedMessage)}</span>
+										</button>
 									{/if}
 									<p>{message.text}</p>
 									{#if message.status === 'pending'}
@@ -330,7 +370,9 @@
 										type="button"
 										onclick={() => selectReplyTarget(message)}
 										aria-label={`Reply to ${message.role} message: ${message.text}`}
+										data-gesture-action="reply"
 									>
+										<span aria-hidden="true">↩</span>
 										Reply
 									</button>
 								{/if}
@@ -350,10 +392,13 @@
 			}}
 		>
 			{#if replyTarget}
-				<div class="reply-preview">
-					<span>Replying to: {replyTarget.text}</span>
+				<div class="reply-preview" data-gesture-action="clear-reply">
+					<div>
+						<strong>Replying to {replyTarget.role === 'user' ? 'you' : 'the agent'}</strong>
+						<span>{replyTarget.text}</span>
+					</div>
 					<button type="button" onclick={clearReplyTarget} aria-label="Cancel reply target"
-						>Cancel</button
+						>Clear</button
 					>
 				</div>
 			{/if}
@@ -673,6 +718,7 @@
 	.message-row {
 		display: flex;
 		margin: 0.45rem 0;
+		scroll-margin: 5rem;
 	}
 
 	.message-row.user {
@@ -687,6 +733,17 @@
 		display: grid;
 		max-width: min(75%, 42rem);
 		gap: 0.25rem;
+		transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	.message-row:hover .message-stack,
+	.message-row:focus-within .message-stack {
+		transform: translateX(0.15rem);
+	}
+
+	.message-row.user:hover .message-stack,
+	.message-row.user:focus-within .message-stack {
+		transform: translateX(-0.15rem);
 	}
 
 	.message-row.user .message-stack {
@@ -721,11 +778,41 @@
 	}
 
 	.message-bubble .reply-reference {
-		margin-bottom: 0.35rem;
+		display: block;
+		width: 100%;
+		max-width: 30rem;
+		margin: 0 0 0.45rem;
+		overflow: hidden;
 		border: 1px solid currentColor;
-		padding-left: 0.45rem;
-		opacity: 0.7;
+		border-radius: 0.8rem;
+		background: oklch(0.98 0.006 270 / 0.18);
+		color: inherit;
+		cursor: pointer;
+		font: inherit;
 		font-size: 0.78rem;
+		opacity: 0.78;
+		padding: 0.38rem 0.55rem;
+		text-align: left;
+		transition:
+			opacity 160ms ease,
+			transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+			background 160ms ease;
+	}
+
+	.message-bubble .reply-reference span {
+		display: block;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.message-bubble .reply-reference:hover,
+	.message-bubble .reply-reference:focus-visible {
+		background: oklch(0.99 0.006 270 / 0.28);
+		opacity: 1;
+		outline: 2px solid currentColor;
+		outline-offset: 2px;
+		transform: translateY(-1px);
 	}
 
 	.message-bubble .message-status {
@@ -744,7 +831,10 @@
 	}
 
 	.reply-button {
+		display: inline-flex;
 		width: fit-content;
+		align-items: center;
+		gap: 0.25rem;
 		border: 0;
 		border-radius: 999px;
 		background: transparent;
@@ -752,13 +842,28 @@
 		cursor: pointer;
 		font: inherit;
 		font-size: 0.78rem;
-		padding: 0.2rem 0.45rem;
+		opacity: 0.28;
+		padding: 0.24rem 0.55rem;
+		touch-action: manipulation;
+		transition:
+			opacity 160ms ease,
+			transform 160ms cubic-bezier(0.22, 1, 0.36, 1),
+			background 160ms ease,
+			color 160ms ease;
+	}
+
+	.message-row:hover .reply-button,
+	.message-row:focus-within .reply-button {
+		opacity: 1;
 	}
 
 	.reply-button:hover,
 	.reply-button:focus-visible {
 		background: oklch(0.948 0.028 286);
 		color: oklch(0.55 0.19 286);
+		outline: 2px solid oklch(0.72 0.12 286 / 0.45);
+		outline-offset: 2px;
+		transform: translateY(-1px);
 	}
 
 	.composer {
@@ -774,17 +879,31 @@
 		justify-content: space-between;
 		gap: 1rem;
 		border: 1px solid oklch(0.55 0.19 286 / 0.35);
-		border-radius: 0.8rem;
+		border-radius: 1rem;
 		background: oklch(0.948 0.028 286);
-		padding: 0.55rem 0.7rem;
+		padding: 0.6rem 0.75rem;
 		color: oklch(0.46 0.18 286);
 		font-size: 0.85rem;
+		touch-action: manipulation;
 	}
 
+	.reply-preview div {
+		display: grid;
+		min-width: 0;
+		gap: 0.12rem;
+	}
+
+	.reply-preview strong,
 	.reply-preview span {
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.reply-preview strong {
+		font-size: 0.72rem;
+		letter-spacing: 0.02em;
+		text-transform: uppercase;
 	}
 
 	.reply-preview button {
@@ -794,6 +913,12 @@
 		cursor: pointer;
 		font: inherit;
 		font-weight: 700;
+	}
+
+	.reply-preview button:hover,
+	.reply-preview button:focus-visible {
+		outline: 2px solid oklch(0.55 0.19 286 / 0.42);
+		outline-offset: 3px;
 	}
 
 	.composer textarea {
