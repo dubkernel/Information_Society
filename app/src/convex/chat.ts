@@ -2,7 +2,11 @@ import { mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import type { Id } from './_generated/dataModel';
-import { buildAgentContextPayload, contextWindowConfig } from './chatContext';
+import {
+	buildAgentContextPayload,
+	contextWindowConfig,
+	organizeConsecutiveUserMessages
+} from './chatContext';
 
 const DEV_SESSION_TITLE = 'Agent Chat';
 const REFRESH_MESSAGE_TEXT = 'The agent is working on refreshing themselves on the topic.';
@@ -180,12 +184,16 @@ async function clearScopedChatData(ctx: MutationCtx, userId: Id<'users'>) {
 	return { deletedMessages, deletedSessions: sessions.length };
 }
 
-function pickPlaceholderReply(text: string, groupedMessages: { text: string }[]) {
-	if (groupedMessages.length > 1) {
-		const threads = groupedMessages
-			.map((message, index) => `${index + 1}. ${message.text.slice(0, 90)}`)
+function pickPlaceholderReply(
+	text: string,
+	groupedMessages: { _id: Id<'messages'>; role: 'user'; text: string; timestamp: number }[]
+) {
+	const organizedGroup = organizeConsecutiveUserMessages(groupedMessages);
+	if (organizedGroup.shouldAddressIndividually) {
+		const threads = organizedGroup.messages
+			.map((message) => `${message.position}. ${message.excerpt}`)
 			.join('\n');
-		return `I’m tracking your last ${groupedMessages.length} messages together:\n${threads}\nI’ll keep each thread organized as we continue.`;
+		return `I’m organizing those ${organizedGroup.messages.length} messages as separate threads:\n${threads}\nI’ll answer them one by one while keeping the conversation in order.`;
 	}
 
 	const index = Math.abs([...text].reduce((sum, character) => sum + character.charCodeAt(0), 0));
@@ -223,7 +231,14 @@ async function buildPlaceholderCompletion(
 	const groupedMessages = (
 		await Promise.all(groupedMessageIds.map((messageId) => ctx.db.get(messageId)))
 	).filter(
-		(message): message is NonNullable<typeof message> =>
+		(
+			message
+		): message is NonNullable<typeof message> & {
+			role: 'user';
+			_id: Id<'messages'>;
+			text: string;
+			timestamp: number;
+		} =>
 			!!message &&
 			message.userId === userId &&
 			message.sessionId === pendingMessage.sessionId &&

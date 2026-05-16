@@ -4,6 +4,7 @@ import {
 	buildAgentContextPayload,
 	contextWindowConfig,
 	findConsecutiveUserMessageIds,
+	organizeConsecutiveUserMessages,
 	type ContextMessage
 } from './chatContext.ts';
 import type { Id } from './_generated/dataModel';
@@ -82,4 +83,35 @@ test('consecutive user grouping identifies latest bounded user run without chang
 		id('m5'),
 		id('m6')
 	]);
+});
+
+test('organized user message group preserves ids, positions, and bounded excerpts', () => {
+	const messages = [
+		message(1, 'assistant'),
+		{ ...message(2, 'user'), text: 'First follow-up to address' },
+		{
+			...message(3, 'user'),
+			text: 'Second follow-up to address with a longer but still readable note'
+		}
+	];
+
+	const group = organizeConsecutiveUserMessages(messages);
+
+	assert.equal(group.shouldAddressIndividually, true);
+	assert.deepEqual(group.messageIds, [id('m2'), id('m3')]);
+	assert.deepEqual(
+		group.messages.map((item) => ({
+			id: item.messageId,
+			position: item.position,
+			excerpt: item.excerpt
+		})),
+		[
+			{ id: id('m2'), position: 1, excerpt: 'First follow-up to address' },
+			{
+				id: id('m3'),
+				position: 2,
+				excerpt: 'Second follow-up to address with a longer but still readable note'
+			}
+		]
+	);
 });
