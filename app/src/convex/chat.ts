@@ -179,9 +179,12 @@ async function clearScopedChatData(ctx: MutationCtx, userId: Id<'users'>) {
 	return { deletedMessages, deletedSessions: sessions.length };
 }
 
-function pickPlaceholderReply(text: string, groupedMessageCount: number) {
-	if (groupedMessageCount > 1) {
-		return `I’m tracking your last ${groupedMessageCount} messages together and will respond to each thread in order.`;
+function pickPlaceholderReply(text: string, groupedMessages: { text: string }[]) {
+	if (groupedMessages.length > 1) {
+		const threads = groupedMessages
+			.map((message, index) => `${index + 1}. ${message.text.slice(0, 90)}`)
+			.join('\n');
+		return `I’m tracking your last ${groupedMessages.length} messages together:\n${threads}\nI’ll keep each thread organized as we continue.`;
 	}
 
 	const index = Math.abs([...text].reduce((sum, character) => sum + character.charCodeAt(0), 0));
@@ -216,10 +219,26 @@ async function buildPlaceholderCompletion(
 		throw new Error('Placeholder trigger message was not found for this chat session.');
 	}
 
+	const groupedMessages = (
+		await Promise.all(groupedMessageIds.map((messageId) => ctx.db.get(messageId)))
+	).filter(
+		(message): message is NonNullable<typeof message> =>
+			!!message &&
+			message.userId === userId &&
+			message.sessionId === pendingMessage.sessionId &&
+			message.role === 'user'
+	);
+
 	return {
 		pendingMessage,
-		text: pickPlaceholderReply(triggerMessage.text, groupedMessageIds.length)
+		text: pickPlaceholderReply(triggerMessage.text, groupedMessages)
 	};
+}
+
+function uniqueMessagesById<T extends { _id: Id<'messages'>; timestamp: number }>(messages: T[]) {
+	return [...new Map(messages.map((message) => [message._id, message])).values()].sort(
+		(a, b) => a.timestamp - b.timestamp
+	);
 }
 
 async function getRecentMessages(
@@ -231,10 +250,46 @@ async function getRecentMessages(
 		.query('messages')
 		.withIndex('byUserSession', (q) => q.eq('userId', userId).eq('sessionId', sessionId))
 		.order('desc')
-		.take(
-			contextWindowConfig.recentMessageLimit + contextWindowConfig.replySurroundingLimit * 2 + 12
-		)
+		.take(contextWindowConfig.recentMessageLimit + contextWindowConfig.consecutiveUserLimit + 4)
 		.then((messages) => messages.reverse());
+}
+
+async function getContextMessagesForSend(params: {
+	ctx: QueryCtx | MutationCtx;
+	userId: Id<'users'>;
+	sessionId: Id<'conversationSessions'>;
+	replyTarget?: { _id: Id<'messages'>; timestamp: number };
+}) {
+	const recentMessages = await getRecentMessages(params.ctx, params.userId, params.sessionId);
+	if (!params.replyTarget) return recentMessages;
+
+	const replyTarget = params.replyTarget;
+	const replyTargetInRecent = recentMessages.some((message) => message._id === replyTarget._id);
+	if (replyTargetInRecent) return recentMessages;
+
+	const beforeAndTarget = await params.ctx.db
+		.query('messages')
+		.withIndex('byUserSession', (q) =>
+			q
+				.eq('userId', params.userId)
+				.eq('sessionId', params.sessionId)
+				.lte('timestamp', replyTarget.timestamp)
+		)
+		.order('desc')
+		.take(contextWindowConfig.replySurroundingLimit + 1);
+
+	const afterAndTarget = await params.ctx.db
+		.query('messages')
+		.withIndex('byUserSession', (q) =>
+			q
+				.eq('userId', params.userId)
+				.eq('sessionId', params.sessionId)
+				.gte('timestamp', replyTarget.timestamp)
+		)
+		.order('asc')
+		.take(contextWindowConfig.replySurroundingLimit + 1);
+
+	return uniqueMessagesById([...beforeAndTarget, ...afterAndTarget, ...recentMessages]);
 }
 
 async function assertMessageInSession(
@@ -342,7 +397,9 @@ export const sendMessage = mutation({
 
 		const scope = await getAuthScope(ctx, clientSessionId);
 		const { sessionId, userId } = await getOrCreateSession(ctx, scope);
-		if (replyingToMessage) await assertMessageInSession(ctx, replyingToMessage, userId, sessionId);
+		const replyTarget = replyingToMessage
+			? await assertMessageInSession(ctx, replyingToMessage, userId, sessionId)
+			: undefined;
 
 		const now = Date.now();
 		const userMessageId = await ctx.db.insert('messages', {
@@ -357,7 +414,12 @@ export const sendMessage = mutation({
 			timestamp: now
 		});
 
-		const contextMessages = await getRecentMessages(ctx, userId, sessionId);
+		const contextMessages = await getContextMessagesForSend({
+			ctx,
+			userId,
+			sessionId,
+			replyTarget
+		});
 		const agentContext = buildAgentContextPayload({
 			messages: contextMessages,
 			triggerMessageId: userMessageId,
