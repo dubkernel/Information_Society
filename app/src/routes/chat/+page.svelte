@@ -129,8 +129,7 @@
 			if (result) {
 				await client.mutation(api.chat.completePlaceholderReply, {
 					clientSessionId,
-					pendingAssistantMessageId: result.pendingAssistantMessageId,
-					text: result.placeholderText
+					pendingAssistantMessageId: result.pendingAssistantMessageId
 				});
 			}
 		} finally {

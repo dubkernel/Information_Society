@@ -16,6 +16,16 @@ export type PlaceholderAgentRequest = {
 	userText: string;
 };
 
+export type AgentReplyEvent =
+	| {
+			type: 'placeholder_reply_requested';
+			request: PlaceholderAgentRequest;
+	  }
+	| {
+			type: 'placeholder_reply_completed';
+			result: PlaceholderAgentResult;
+	  };
+
 export type PlaceholderAgentResult = {
 	pendingAssistantMessageId: Id<'messages'>;
 	text: string;
@@ -176,6 +186,40 @@ function pickPlaceholderReply(text: string, groupedMessageCount: number) {
 
 	const index = Math.abs([...text].reduce((sum, character) => sum + character.charCodeAt(0), 0));
 	return placeholderReplies[index % placeholderReplies.length];
+}
+
+async function buildPlaceholderCompletion(
+	ctx: MutationCtx,
+	pendingMessageId: Id<'messages'>,
+	userId: Id<'users'>
+) {
+	const pendingMessage = await ctx.db.get(pendingMessageId);
+	if (
+		!pendingMessage ||
+		pendingMessage.userId !== userId ||
+		pendingMessage.role !== 'assistant' ||
+		pendingMessage.source !== 'assistant_placeholder' ||
+		pendingMessage.status !== 'pending'
+	) {
+		throw new Error('Pending placeholder reply was not found for this chat session.');
+	}
+
+	const groupedMessageIds = pendingMessage.groupedMessageIds ?? [];
+	const triggerMessageId = groupedMessageIds.at(-1);
+	const triggerMessage = triggerMessageId ? await ctx.db.get(triggerMessageId) : null;
+	if (
+		!triggerMessage ||
+		triggerMessage.userId !== userId ||
+		triggerMessage.sessionId !== pendingMessage.sessionId ||
+		triggerMessage.role !== 'user'
+	) {
+		throw new Error('Placeholder trigger message was not found for this chat session.');
+	}
+
+	return {
+		pendingMessage,
+		text: pickPlaceholderReply(triggerMessage.text, groupedMessageIds.length)
+	};
 }
 
 async function getRecentMessages(
@@ -351,12 +395,17 @@ export const sendMessage = mutation({
 			userText: trimmed
 		};
 
+		const agentReplyEvent: AgentReplyEvent = {
+			type: 'placeholder_reply_requested',
+			request: placeholderRequest
+		};
+
 		return {
 			userMessageId,
 			pendingAssistantMessageId,
 			agentContext,
 			placeholderRequest,
-			placeholderText: pickPlaceholderReply(trimmed, agentContext.consecutiveUserMessageIds.length)
+			agentReplyEvent
 		};
 	}
 });
@@ -364,38 +413,31 @@ export const sendMessage = mutation({
 export const completePlaceholderReply = mutation({
 	args: {
 		clientSessionId: v.optional(v.string()),
-		pendingAssistantMessageId: v.id('messages'),
-		text: v.string()
+		pendingAssistantMessageId: v.id('messages')
 	},
-	handler: async (ctx, { clientSessionId, pendingAssistantMessageId, text }) => {
-		const trimmed = text.trim();
-		if (!trimmed) throw new Error('Placeholder reply text is required.');
-
+	handler: async (ctx, { clientSessionId, pendingAssistantMessageId }) => {
 		const scope = await getAuthScope(ctx, clientSessionId);
 		const user = await getExistingUser(ctx, scope.authId);
 		if (!user) throw new Error('Chat user does not exist.');
 
-		const pendingMessage = await ctx.db.get(pendingAssistantMessageId);
-		if (
-			!pendingMessage ||
-			pendingMessage.userId !== user._id ||
-			pendingMessage.role !== 'assistant' ||
-			pendingMessage.source !== 'assistant_placeholder' ||
-			pendingMessage.status !== 'pending'
-		) {
-			throw new Error('Pending placeholder reply was not found for this chat session.');
-		}
+		const { text } = await buildPlaceholderCompletion(ctx, pendingAssistantMessageId, user._id);
 
 		await ctx.db.patch(pendingAssistantMessageId, {
-			text: trimmed,
+			text,
 			status: 'complete'
 		});
 
-		return {
+		const result = {
 			pendingAssistantMessageId,
-			text: trimmed,
+			text,
 			status: 'complete'
 		} satisfies PlaceholderAgentResult;
+		const agentReplyEvent: AgentReplyEvent = {
+			type: 'placeholder_reply_completed',
+			result
+		};
+
+		return { ...result, agentReplyEvent };
 	}
 });
 
