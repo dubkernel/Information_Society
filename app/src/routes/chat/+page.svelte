@@ -35,6 +35,8 @@
 	let isDateMenuOpen = $state(false);
 	let activeDateKey = $state<string>();
 	let highlightedDateKey = $state<string>();
+	let hasPositionedInitialViewport = $state(false);
+	const dateMenuId = 'conversation-date-menu';
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
@@ -60,6 +62,9 @@
 	const currentDate = $derived(
 		activeDay?.label ?? formatConversationDate(messages.at(-1)?.timestamp ?? new Date())
 	);
+	const currentDateSummary = $derived(
+		activeDay ? `${activeDay.messages.length} messages in view` : 'No dated messages yet'
+	);
 	const messagesById = $derived(new Map(messages.map((message) => [message.id, message])));
 	const replyTarget = $derived(
 		replyingToMessageId ? messagesById.get(replyingToMessageId) : undefined
@@ -68,12 +73,24 @@
 	$effect(() => {
 		if (messageDays.length === 0) {
 			activeDateKey = undefined;
+			hasPositionedInitialViewport = false;
 			return;
 		}
 
 		if (!activeDateKey || !messageDays.some((day) => day.dateKey === activeDateKey)) {
 			activeDateKey = messageDays.at(-1)?.dateKey;
 		}
+	});
+
+	$effect(() => {
+		if (hasPositionedInitialViewport || persistedMessages.isLoading || messageDays.length === 0)
+			return;
+		hasPositionedInitialViewport = true;
+		void tick().then(() => {
+			if (!historyElement) return;
+			historyElement.scrollTop = historyElement.scrollHeight;
+			activeDateKey = messageDays.at(-1)?.dateKey;
+		});
 	});
 
 	function getClientSessionId() {
@@ -184,15 +201,20 @@
 		isDateMenuOpen = false;
 	}
 
+	function handleGlobalPointerDown(event: PointerEvent) {
+		if (!isDateMenuOpen) return;
+		const target = event.target;
+		if (target instanceof Node && dateMenuElement?.contains(target)) return;
+		closeDateMenu();
+	}
+
 	async function jumpToDate(day: MessageDay) {
 		activeDateKey = day.dateKey;
 		highlightedDateKey = day.dateKey;
 		isDateMenuOpen = false;
 		await tick();
 
-		const target = historyElement?.querySelector<HTMLElement>(
-			`[data-day-first-message="${day.dateKey}"]`
-		);
+		const target = historyElement?.querySelector<HTMLElement>(`[data-date-key="${day.dateKey}"]`);
 		target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
 
 		window.setTimeout(() => {
@@ -267,7 +289,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleGlobalDateMenuKeydown} />
+<svelte:window onkeydown={handleGlobalDateMenuKeydown} onpointerdown={handleGlobalPointerDown} />
 
 <svelte:head>
 	<title>Chat · Information Society</title>
@@ -291,16 +313,24 @@
 					<button
 						class="date-button"
 						type="button"
-						aria-label={`Conversation date, ${currentDate}. Open date menu`}
+						aria-label={`Conversation date, ${currentDate}. ${currentDateSummary}. Open date menu`}
 						aria-haspopup="listbox"
 						aria-expanded={isDateMenuOpen}
+						aria-controls={dateMenuId}
 						onclick={toggleDateMenu}
 					>
-						{currentDate}
-						<span aria-hidden="true">⌄</span>
+						<span class="date-button-label">{currentDate}</span>
+						<span class="date-button-meta">{currentDateSummary}</span>
+						<span class="date-chevron" aria-hidden="true">⌄</span>
 					</button>
 					{#if isDateMenuOpen}
-						<div class="date-menu" role="listbox" aria-label="Conversation dates" tabindex="-1">
+						<div
+							id={dateMenuId}
+							class="date-menu"
+							role="listbox"
+							aria-label="Conversation dates"
+							tabindex="-1"
+						>
 							{#if messageDays.length === 0}
 								<p>No messages yet</p>
 							{:else}
@@ -552,15 +582,41 @@
 	}
 
 	.date-button {
-		display: inline-flex;
+		display: inline-grid;
+		grid-template-columns: minmax(0, auto) auto;
 		align-items: center;
-		gap: 0.3rem;
+		column-gap: 0.35rem;
+		row-gap: 0.05rem;
 		margin-top: 0.25rem;
-		padding: 0;
+		padding: 0.12rem 0.35rem 0.12rem 0;
 		background: transparent;
 		color: oklch(0.49 0.035 270);
 		cursor: pointer;
 		font-size: 0.9rem;
+		text-align: left;
+	}
+
+	.date-button-label {
+		min-width: 0;
+		font-weight: 650;
+		line-height: 1.15;
+	}
+
+	.date-button-meta {
+		grid-column: 1 / -1;
+		color: oklch(0.56 0.028 270);
+		font-size: 0.72rem;
+		line-height: 1.1;
+	}
+
+	.date-chevron {
+		grid-column: 2;
+		grid-row: 1;
+		transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	.date-button[aria-expanded='true'] .date-chevron {
+		transform: rotate(180deg);
 	}
 
 	.date-menu {
@@ -620,6 +676,11 @@
 	.home-link:hover,
 	.home-link:focus-visible {
 		color: oklch(0.55 0.19 286);
+	}
+
+	.date-button:hover .date-button-meta,
+	.date-button:focus-visible .date-button-meta {
+		color: oklch(0.46 0.18 286);
 	}
 
 	.header-actions {
@@ -684,7 +745,7 @@
 		position: sticky;
 		top: 0;
 		z-index: 1;
-		scroll-margin-top: 1rem;
+		scroll-margin-top: 0.75rem;
 		display: flex;
 		justify-content: center;
 		padding: 0.25rem 0 1rem;
