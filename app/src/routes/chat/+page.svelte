@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { dev } from '$app/environment';
+	import { browser, dev } from '$app/environment';
 	import { resolve } from '$app/paths';
 	import { tick } from 'svelte';
 	import { useConvexClient, useQuery } from 'convex-svelte';
@@ -21,7 +21,8 @@
 	};
 
 	const client = useConvexClient();
-	const persistedMessages = useQuery(api.chat.listMessages, {});
+	const clientSessionId = getClientSessionId();
+	const persistedMessages = useQuery(api.chat.listMessages, { clientSessionId });
 
 	let draft = $state('');
 	let isSending = $state(false);
@@ -68,6 +69,18 @@
 		}
 	});
 
+	function getClientSessionId() {
+		if (!browser) return 'server-render-session-placeholder';
+
+		const storageKey = 'is-chat-client-session-id';
+		const existing = localStorage.getItem(storageKey);
+		if (existing) return existing;
+
+		const next = crypto.randomUUID();
+		localStorage.setItem(storageKey, next);
+		return next;
+	}
+
 	function formatConversationDate(date: Date) {
 		return dayFormatter.format(date);
 	}
@@ -101,7 +114,11 @@
 
 		isSending = true;
 		try {
-			await client.mutation(api.chat.sendMessage, { text, replyingToMessage: replyingToMessageId });
+			await client.mutation(api.chat.sendMessage, {
+				clientSessionId,
+				text,
+				replyingToMessage: replyingToMessageId
+			});
 			draft = '';
 			replyingToMessageId = undefined;
 			await tick();
@@ -163,6 +180,7 @@
 		devToolStatus = 'Seeding 50 development messages…';
 		try {
 			const result = await client.mutation(api.chat.seedDevData, {
+				clientSessionId,
 				count: 50,
 				confirm: 'SEED_DEV_CHAT_DATA'
 			});
@@ -178,6 +196,7 @@
 		devToolStatus = 'Clearing development chat data…';
 		try {
 			const result = await client.mutation(api.chat.clearDevData, {
+				clientSessionId,
 				confirm: 'CLEAR_DEV_CHAT_DATA'
 			});
 			devToolStatus = `Cleared ${result.deletedMessages} messages across ${result.deletedSessions} sessions.`;
@@ -293,12 +312,12 @@
 										>{timeFormatter.format(message.timestamp)}</time
 									>
 								</div>
-								{#if message.role === 'assistant'}
+								{#if message.role !== 'system'}
 									<button
 										class="reply-button"
 										type="button"
 										onclick={() => selectReplyTarget(message)}
-										aria-label={`Reply to assistant message: ${message.text}`}
+										aria-label={`Reply to ${message.role} message: ${message.text}`}
 									>
 										Reply
 									</button>
@@ -346,9 +365,14 @@
 		margin: 0;
 		min-width: 320px;
 		background:
-			radial-gradient(circle at top left, rgba(99, 102, 241, 0.2), transparent 30rem),
-			linear-gradient(135deg, #f8fafc 0%, #eef2ff 45%, #f8fafc 100%);
-		color: #111827;
+			radial-gradient(circle at top left, oklch(0.62 0.16 286 / 0.2), transparent 30rem),
+			linear-gradient(
+				135deg,
+				oklch(0.982 0.006 270) 0%,
+				oklch(0.948 0.028 286) 45%,
+				oklch(0.982 0.006 270) 100%
+			);
+		color: oklch(0.2 0.018 270);
 		font-family:
 			Inter,
 			ui-sans-serif,
@@ -374,9 +398,8 @@
 		overflow: hidden;
 		border: 1px solid rgba(148, 163, 184, 0.28);
 		border-radius: 2rem;
-		background: rgba(255, 255, 255, 0.86);
-		box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
-		backdrop-filter: blur(18px);
+		background: oklch(0.992 0.004 270);
+		box-shadow: 0 24px 80px oklch(0.2 0.035 270 / 0.12);
 	}
 
 	.chat-header,
@@ -408,8 +431,8 @@
 		flex: 0 0 auto;
 		place-items: center;
 		border-radius: 1rem;
-		background: linear-gradient(135deg, #111827, #4f46e5);
-		color: white;
+		background: linear-gradient(135deg, oklch(0.2 0.018 270), oklch(0.55 0.19 286));
+		color: oklch(0.98 0.006 270);
 		font-weight: 800;
 		letter-spacing: -0.04em;
 	}
@@ -444,7 +467,7 @@
 		margin-top: 0.25rem;
 		padding: 0;
 		background: transparent;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		cursor: pointer;
 		font-size: 0.9rem;
 	}
@@ -460,7 +483,7 @@
 		overflow-y: auto;
 		border: 1px solid rgba(148, 163, 184, 0.28);
 		border-radius: 1rem;
-		background: rgba(255, 255, 255, 0.98);
+		background: oklch(0.992 0.004 270);
 		box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16);
 		padding: 0.35rem;
 	}
@@ -468,7 +491,7 @@
 	.date-menu p {
 		margin: 0;
 		padding: 0.75rem;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		font-size: 0.86rem;
 	}
 
@@ -481,7 +504,7 @@
 		border: 0;
 		border-radius: 0.75rem;
 		background: transparent;
-		color: #111827;
+		color: oklch(0.2 0.018 270);
 		cursor: pointer;
 		font: inherit;
 		padding: 0.65rem 0.75rem;
@@ -491,13 +514,13 @@
 	.date-option:hover,
 	.date-option:focus-visible,
 	.date-option[aria-selected='true'] {
-		background: #eef2ff;
-		color: #4338ca;
+		background: oklch(0.948 0.028 286);
+		color: oklch(0.46 0.18 286);
 	}
 
 	.date-option small {
 		flex: 0 0 auto;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		font-size: 0.72rem;
 	}
 
@@ -505,7 +528,7 @@
 	.date-button:focus-visible,
 	.home-link:hover,
 	.home-link:focus-visible {
-		color: #4f46e5;
+		color: oklch(0.55 0.19 286);
 	}
 
 	.header-actions {
@@ -520,22 +543,22 @@
 	.header-actions button,
 	.home-link {
 		border-radius: 999px;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		font-size: 0.9rem;
 		text-decoration: none;
 	}
 
 	.header-actions button {
 		border: 1px solid rgba(148, 163, 184, 0.28);
-		background: rgba(255, 255, 255, 0.68);
+		background: oklch(0.985 0.006 270);
 		cursor: pointer;
 		padding: 0.45rem 0.7rem;
 	}
 
 	.header-actions button:hover:not(:disabled),
 	.header-actions button:focus-visible:not(:disabled) {
-		background: #eef2ff;
-		color: #4f46e5;
+		background: oklch(0.948 0.028 286);
+		color: oklch(0.55 0.19 286);
 	}
 
 	.header-actions button:disabled {
@@ -548,7 +571,7 @@
 		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 		background: rgba(238, 242, 255, 0.72);
 		padding: 0.55rem 1.5rem;
-		color: #4f46e5;
+		color: oklch(0.55 0.19 286);
 		font-size: 0.85rem;
 		text-align: center;
 	}
@@ -581,7 +604,7 @@
 		border-radius: 999px;
 		background: rgba(241, 245, 249, 0.92);
 		padding: 0.35rem 0.7rem;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		font-size: 0.78rem;
 		box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
 	}
@@ -589,7 +612,7 @@
 	.empty-state {
 		margin: 4rem auto;
 		max-width: 24rem;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		text-align: center;
 	}
 
@@ -605,7 +628,12 @@
 		width: min(72%, 32rem);
 		height: 3.7rem;
 		border-radius: 1.35rem;
-		background: linear-gradient(90deg, #eef2ff 0%, #f8fafc 48%, #eef2ff 100%);
+		background: linear-gradient(
+			90deg,
+			oklch(0.948 0.028 286) 0%,
+			oklch(0.982 0.006 270) 48%,
+			oklch(0.948 0.028 286) 100%
+		);
 		background-size: 200% 100%;
 		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
 		animation: skeleton-shimmer 1.6s ease-in-out infinite;
@@ -655,14 +683,14 @@
 
 	.message-bubble {
 		border-radius: 1.35rem;
-		background: #f1f5f9;
+		background: oklch(0.962 0.01 270);
 		padding: 0.75rem 0.9rem 0.55rem;
 		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
 	}
 
 	.message-row.user .message-bubble {
-		background: #4f46e5;
-		color: white;
+		background: oklch(0.55 0.19 286);
+		color: oklch(0.98 0.006 270);
 	}
 
 	.message-row.system .message-stack {
@@ -671,7 +699,7 @@
 
 	.message-row.system .message-bubble {
 		background: rgba(226, 232, 240, 0.7);
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		text-align: center;
 	}
 
@@ -682,7 +710,7 @@
 
 	.message-bubble .reply-reference {
 		margin-bottom: 0.35rem;
-		border-left: 2px solid currentColor;
+		border: 1px solid currentColor;
 		padding-left: 0.45rem;
 		opacity: 0.7;
 		font-size: 0.78rem;
@@ -701,7 +729,7 @@
 		border: 0;
 		border-radius: 999px;
 		background: transparent;
-		color: #64748b;
+		color: oklch(0.49 0.035 270);
 		cursor: pointer;
 		font: inherit;
 		font-size: 0.78rem;
@@ -710,14 +738,14 @@
 
 	.reply-button:hover,
 	.reply-button:focus-visible {
-		background: #eef2ff;
-		color: #4f46e5;
+		background: oklch(0.948 0.028 286);
+		color: oklch(0.55 0.19 286);
 	}
 
 	.composer {
 		flex-wrap: wrap;
 		border-top: 1px solid rgba(148, 163, 184, 0.18);
-		background: rgba(255, 255, 255, 0.72);
+		background: oklch(0.992 0.004 270);
 	}
 
 	.reply-preview {
@@ -726,11 +754,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-		border-left: 3px solid #4f46e5;
+		border: 1px solid oklch(0.55 0.19 286 / 0.35);
 		border-radius: 0.8rem;
-		background: #eef2ff;
+		background: oklch(0.948 0.028 286);
 		padding: 0.55rem 0.7rem;
-		color: #4338ca;
+		color: oklch(0.46 0.18 286);
 		font-size: 0.85rem;
 	}
 
@@ -743,7 +771,7 @@
 	.reply-preview button {
 		border: 0;
 		background: transparent;
-		color: #4338ca;
+		color: oklch(0.46 0.18 286);
 		cursor: pointer;
 		font: inherit;
 		font-weight: 700;
@@ -757,20 +785,20 @@
 		border: 1px solid rgba(148, 163, 184, 0.35);
 		border-radius: 1.25rem;
 		padding: 0.78rem 1rem;
-		background: white;
-		box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+		background: oklch(0.99 0.004 270);
+		box-shadow: inset 0 1px 2px oklch(0.2 0.035 270 / 0.04);
 		font: inherit;
 	}
 
 	.composer textarea:focus {
-		border-color: #818cf8;
+		border-color: oklch(0.68 0.15 286);
 		outline: 3px solid rgba(129, 140, 248, 0.25);
 	}
 
 	.composer button {
 		border-radius: 999px;
-		background: #111827;
-		color: white;
+		background: oklch(0.2 0.018 270);
+		color: oklch(0.98 0.006 270);
 		cursor: pointer;
 		padding: 0.78rem 1rem;
 		font-weight: 700;
@@ -779,7 +807,7 @@
 	.composer button:hover:not(:disabled),
 	.composer button:focus-visible:not(:disabled) {
 		transform: translateY(-1px);
-		background: #4f46e5;
+		background: oklch(0.55 0.19 286);
 		box-shadow: 0 10px 24px rgba(79, 70, 229, 0.28);
 	}
 

@@ -17,6 +17,13 @@ const ingestionStatus = v.union(
 	v.literal('discarded')
 );
 
+const messageSource = v.union(
+	v.literal('user_input'),
+	v.literal('assistant_placeholder'),
+	v.literal('automated_context_refresh'),
+	v.literal('system_event')
+);
+
 export default defineSchema({
 	// ---------------------------------------------------------------------------
 	// Core users (external auth provider identity + app profile metadata)
@@ -154,7 +161,13 @@ export default defineSchema({
 		model: v.optional(v.string()),
 		status: v.optional(v.union(v.literal('pending'), v.literal('complete'), v.literal('failed'))),
 		error: v.optional(v.string()),
+		source: v.optional(messageSource),
+		isAutomated: v.optional(v.boolean()),
 		replyingToMessage: v.optional(v.id('messages')),
+		contextWindowMessageIds: v.optional(v.array(v.id('messages'))),
+		replyContextMessageIds: v.optional(v.array(v.id('messages'))),
+		groupedMessageIds: v.optional(v.array(v.id('messages'))),
+		refreshReason: v.optional(v.string()),
 		relatedPersonId: v.optional(v.id('people')),
 		relatedEventId: v.optional(v.id('events')),
 		timestamp: v.number()
