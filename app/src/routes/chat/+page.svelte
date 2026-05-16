@@ -31,8 +31,10 @@
 	let devToolStatus = $state('');
 	let replyingToMessageId = $state<Id<'messages'>>();
 	let historyElement = $state<HTMLElement>();
+	let dateMenuElement = $state<HTMLElement>();
 	let isDateMenuOpen = $state(false);
 	let activeDateKey = $state<string>();
+	let highlightedDateKey = $state<string>();
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
@@ -91,7 +93,10 @@
 	}
 
 	function dateKey(date: Date) {
-		return date.toISOString().slice(0, 10);
+		const year = date.getFullYear();
+		const month = String(date.getMonth() + 1).padStart(2, '0');
+		const day = String(date.getDate()).padStart(2, '0');
+		return `${year}-${month}-${day}`;
 	}
 
 	function groupMessagesByDay(chatMessages: ChatMessage[]) {
@@ -175,13 +180,24 @@
 		isDateMenuOpen = !isDateMenuOpen;
 	}
 
+	function closeDateMenu() {
+		isDateMenuOpen = false;
+	}
+
 	async function jumpToDate(day: MessageDay) {
 		activeDateKey = day.dateKey;
+		highlightedDateKey = day.dateKey;
 		isDateMenuOpen = false;
 		await tick();
 
-		const target = historyElement?.querySelector<HTMLElement>(`[data-date-key="${day.dateKey}"]`);
+		const target = historyElement?.querySelector<HTMLElement>(
+			`[data-day-first-message="${day.dateKey}"]`
+		);
 		target?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+
+		window.setTimeout(() => {
+			if (highlightedDateKey === day.dateKey) highlightedDateKey = undefined;
+		}, 900);
 	}
 
 	function updateActiveDateFromScroll() {
@@ -207,6 +223,16 @@
 
 		event.preventDefault();
 		await jumpToDate(day);
+	}
+
+	function handleGlobalDateMenuKeydown(event: KeyboardEvent) {
+		if (event.key === 'Escape') closeDateMenu();
+	}
+
+	function handleDateMenuFocusOut(event: FocusEvent) {
+		const nextTarget = event.relatedTarget;
+		if (nextTarget instanceof Node && dateMenuElement?.contains(nextTarget)) return;
+		closeDateMenu();
 	}
 
 	async function seedDevChat() {
@@ -241,6 +267,8 @@
 	}
 </script>
 
+<svelte:window onkeydown={handleGlobalDateMenuKeydown} />
+
 <svelte:head>
 	<title>Chat · Information Society</title>
 	<meta
@@ -254,12 +282,16 @@
 		<header class="chat-header">
 			<div class="agent-lockup">
 				<div class="agent-avatar" aria-hidden="true">IS</div>
-				<div class="date-menu-anchor">
+				<div
+					class="date-menu-anchor"
+					bind:this={dateMenuElement}
+					onfocusout={handleDateMenuFocusOut}
+				>
 					<h1 id="chat-title">Agent Chat</h1>
 					<button
 						class="date-button"
 						type="button"
-						aria-label="Open conversation date menu"
+						aria-label={`Conversation date, ${currentDate}. Open date menu`}
 						aria-haspopup="listbox"
 						aria-expanded={isDateMenuOpen}
 						onclick={toggleDateMenu}
@@ -268,7 +300,7 @@
 						<span aria-hidden="true">⌄</span>
 					</button>
 					{#if isDateMenuOpen}
-						<div class="date-menu" role="listbox" aria-label="Conversation dates">
+						<div class="date-menu" role="listbox" aria-label="Conversation dates" tabindex="-1">
 							{#if messageDays.length === 0}
 								<p>No messages yet</p>
 							{:else}
@@ -277,7 +309,7 @@
 										class="date-option"
 										type="button"
 										role="option"
-										aria-selected={day.label === currentDate}
+										aria-selected={day.dateKey === activeDateKey}
 										onclick={() => jumpToDate(day)}
 										onkeydown={(event) => handleDateKeydown(event, day)}
 									>
@@ -335,14 +367,16 @@
 					>
 						<span>{day.label}</span>
 					</div>
-					{#each day.messages as message (message.id)}
+					{#each day.messages as message, messageIndex (message.id)}
 						{@const referencedMessage = message.replyingToMessage
 							? messagesById.get(message.replyingToMessage)
 							: undefined}
 						<article
 							class={`message-row ${message.role}`}
+							class:date-jump-highlight={highlightedDateKey === day.dateKey}
 							aria-label={`${message.role} message`}
 							data-message-id={message.id}
+							data-day-first-message={messageIndex === 0 ? day.dateKey : undefined}
 						>
 							<div class="message-stack">
 								<div class="message-bubble">
@@ -718,7 +752,27 @@
 	.message-row {
 		display: flex;
 		margin: 0.45rem 0;
-		scroll-margin: 5rem;
+		scroll-margin: 4.25rem;
+	}
+
+	.message-row.date-jump-highlight .message-bubble {
+		animation: date-jump-settle 820ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+
+	@keyframes date-jump-settle {
+		0% {
+			box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+		}
+
+		22% {
+			box-shadow:
+				0 0 0 3px oklch(0.72 0.14 286 / 0.24),
+				0 10px 24px rgba(15, 23, 42, 0.1);
+		}
+
+		100% {
+			box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+		}
 	}
 
 	.message-row.user {
