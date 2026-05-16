@@ -388,6 +388,7 @@
 	}
 
 	.chat-header {
+		flex-wrap: wrap;
 		justify-content: space-between;
 		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
 		container-type: inline-size;
@@ -797,17 +798,13 @@
 	}
 
 	@container (max-width: 34rem) {
-		.chat-header {
-			align-items: flex-start;
-			gap: 0.75rem;
-		}
-
 		.agent-lockup {
 			flex: 1 1 12rem;
 		}
 
 		.header-actions {
 			flex: 0 1 10.5rem;
+			align-self: flex-start;
 			gap: 0.35rem;
 		}
 
