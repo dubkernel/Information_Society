@@ -390,6 +390,7 @@
 	.chat-header {
 		justify-content: space-between;
 		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+		container-type: inline-size;
 	}
 
 	.agent-lockup {
@@ -509,6 +510,9 @@
 	.header-actions {
 		display: flex;
 		align-items: center;
+		justify-content: flex-end;
+		min-width: 0;
+		flex-wrap: wrap;
 		gap: 0.55rem;
 	}
 
@@ -792,6 +796,31 @@
 		white-space: nowrap;
 	}
 
+	@container (max-width: 34rem) {
+		.chat-header {
+			align-items: flex-start;
+			gap: 0.75rem;
+		}
+
+		.agent-lockup {
+			flex: 1 1 12rem;
+		}
+
+		.header-actions {
+			flex: 0 1 10.5rem;
+			gap: 0.35rem;
+		}
+
+		.header-actions button {
+			padding: 0.4rem 0.55rem;
+			font-size: 0.78rem;
+		}
+
+		.home-link {
+			display: none;
+		}
+	}
+
 	@media (max-width: 640px) {
 		.chat-page {
 			padding: 0;
@@ -804,21 +833,12 @@
 			border-radius: 0;
 		}
 
+		.chat-header {
+			padding-block: 0.85rem;
+		}
+
 		.message-stack {
 			max-width: 86%;
-		}
-
-		.header-actions {
-			gap: 0.35rem;
-		}
-
-		.header-actions button {
-			padding: 0.4rem 0.55rem;
-			font-size: 0.78rem;
-		}
-
-		.home-link {
-			display: none;
 		}
 	}
 
