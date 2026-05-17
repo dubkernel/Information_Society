@@ -36,6 +36,8 @@
 	let activeDateKey = $state<string>();
 	let highlightedDateKey = $state<string>();
 	let hasPositionedInitialViewport = $state(false);
+	let themeMode = $state<'system' | 'light' | 'dark'>('system');
+	let systemPrefersDark = $state(false);
 	const dateMenuId = 'conversation-date-menu';
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
@@ -69,6 +71,29 @@
 	const replyTarget = $derived(
 		replyingToMessageId ? messagesById.get(replyingToMessageId) : undefined
 	);
+
+	$effect(() => {
+		if (!browser) return;
+
+		const storedTheme = localStorage.getItem('is-chat-theme-mode');
+		if (storedTheme === 'light' || storedTheme === 'dark' || storedTheme === 'system') {
+			themeMode = storedTheme;
+		}
+
+		const media = window.matchMedia('(prefers-color-scheme: dark)');
+		const updateSystemTheme = () => {
+			systemPrefersDark = media.matches;
+		};
+
+		updateSystemTheme();
+		media.addEventListener('change', updateSystemTheme);
+		return () => media.removeEventListener('change', updateSystemTheme);
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		localStorage.setItem('is-chat-theme-mode', themeMode);
+	});
 
 	$effect(() => {
 		if (messageDays.length === 0) {
@@ -160,6 +185,13 @@
 		} finally {
 			isSending = false;
 		}
+	}
+
+	function handleComposerKeydown(event: KeyboardEvent) {
+		if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+
+		event.preventDefault();
+		void sendMessage();
 	}
 
 	function selectReplyTarget(message: ChatMessage) {
@@ -257,6 +289,10 @@
 		closeDateMenu();
 	}
 
+	function setThemeMode(mode: 'system' | 'light' | 'dark') {
+		themeMode = mode;
+	}
+
 	async function seedDevChat() {
 		if (isDevToolRunning) return;
 		isDevToolRunning = true;
@@ -299,7 +335,11 @@
 	/>
 </svelte:head>
 
-<main class="chat-page" aria-labelledby="chat-title">
+<main
+	class="chat-page"
+	class:dark-theme={themeMode === 'dark' || (themeMode === 'system' && systemPrefersDark)}
+	aria-labelledby="chat-title"
+>
 	<section class="chat-card" aria-label="Agent conversation">
 		<header class="chat-header">
 			<div class="agent-lockup">
@@ -353,6 +393,29 @@
 				</div>
 			</div>
 			<div class="header-actions">
+				<div class="theme-toggle" aria-label="Appearance">
+					<button
+						type="button"
+						aria-pressed={themeMode === 'system'}
+						onclick={() => setThemeMode('system')}
+					>
+						Follow system
+					</button>
+					<button
+						type="button"
+						aria-pressed={themeMode === 'light'}
+						onclick={() => setThemeMode('light')}
+					>
+						Light
+					</button>
+					<button
+						type="button"
+						aria-pressed={themeMode === 'dark'}
+						onclick={() => setThemeMode('dark')}
+					>
+						Dark
+					</button>
+				</div>
 				{#if dev}
 					<button type="button" onclick={seedDevChat} disabled={isDevToolRunning}
 						>Seed dev chat</button
@@ -473,6 +536,7 @@
 				placeholder="Message the agent…"
 				rows="1"
 				aria-label="Message the agent"
+				onkeydown={handleComposerKeydown}
 			></textarea>
 			<button type="submit" disabled={!draft.trim() || isSending}>
 				{isSending ? 'Sending…' : 'Send'}
@@ -485,15 +549,9 @@
 	:global(body) {
 		margin: 0;
 		min-width: 320px;
-		background:
-			radial-gradient(circle at top left, oklch(0.62 0.16 286 / 0.2), transparent 30rem),
-			linear-gradient(
-				135deg,
-				oklch(0.982 0.006 270) 0%,
-				oklch(0.948 0.028 286) 45%,
-				oklch(0.982 0.006 270) 100%
-			);
-		color: oklch(0.2 0.018 270);
+		overflow: hidden;
+		background: oklch(0.965 0 0);
+		color: oklch(0.18 0 0);
 		font-family:
 			Inter,
 			ui-sans-serif,
@@ -505,22 +563,64 @@
 	}
 
 	.chat-page {
+		--page: oklch(0.965 0 0);
+		--surface: oklch(0.985 0 0);
+		--surface-soft: oklch(0.955 0 0);
+		--surface-muted: oklch(0.92 0 0);
+		--surface-hover: oklch(0.9 0 0);
+		--surface-translucent: oklch(0.94 0 0 / 0.92);
+		--reply-reference: oklch(0.98 0 0 / 0.18);
+		--reply-reference-hover: oklch(0.99 0 0 / 0.28);
+		--input: oklch(0.99 0 0);
+		--inset: oklch(0.18 0 0 / 0.04);
+		--text: oklch(0.18 0 0);
+		--text-invert: oklch(0.96 0 0);
+		--text-muted: oklch(0.42 0 0);
+		--text-subtle: oklch(0.5 0 0);
+		--strong: oklch(0.16 0 0);
+		--line: oklch(0.86 0 0);
+		--line-strong: oklch(0.76 0 0);
+		--shadow: oklch(0.16 0 0 / 0.12);
+		--focus: oklch(0.35 0 0 / 0.28);
 		display: grid;
-		min-height: 100svh;
-		place-items: center;
-		padding: clamp(0.75rem, 2vw, 2rem);
+		height: 100svh;
+		padding: 0;
+		background: var(--page);
+		color: var(--text);
+	}
+
+	.chat-page.dark-theme {
+		--page: oklch(0.13 0 0);
+		--surface: oklch(0.18 0 0);
+		--surface-soft: oklch(0.22 0 0);
+		--surface-muted: oklch(0.25 0 0);
+		--surface-hover: oklch(0.31 0 0);
+		--surface-translucent: oklch(0.22 0 0 / 0.92);
+		--reply-reference: oklch(1 0 0 / 0.1);
+		--reply-reference-hover: oklch(1 0 0 / 0.16);
+		--input: oklch(0.15 0 0);
+		--inset: oklch(0 0 0 / 0.22);
+		--text: oklch(0.93 0 0);
+		--text-invert: oklch(0.12 0 0);
+		--text-muted: oklch(0.72 0 0);
+		--text-subtle: oklch(0.62 0 0);
+		--strong: oklch(0.94 0 0);
+		--line: oklch(0.31 0 0);
+		--line-strong: oklch(0.42 0 0);
+		--shadow: oklch(0 0 0 / 0.32);
+		--focus: oklch(0.78 0 0 / 0.32);
 	}
 
 	.chat-card {
 		display: grid;
 		grid-template-rows: auto minmax(0, 1fr) auto;
-		width: min(100%, 62rem);
-		height: min(100svh - 1.5rem, 54rem);
+		width: 100%;
+		height: 100svh;
 		overflow: hidden;
-		border: 1px solid rgba(148, 163, 184, 0.28);
-		border-radius: 2rem;
-		background: oklch(0.992 0.004 270);
-		box-shadow: 0 24px 80px oklch(0.2 0.035 270 / 0.12);
+		border: 0;
+		border-radius: 0;
+		background: var(--surface);
+		box-shadow: none;
 	}
 
 	.chat-header,
@@ -534,7 +634,7 @@
 	.chat-header {
 		flex-wrap: wrap;
 		justify-content: space-between;
-		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+		border-bottom: 1px solid var(--line);
 		container-type: inline-size;
 	}
 
@@ -552,8 +652,8 @@
 		flex: 0 0 auto;
 		place-items: center;
 		border-radius: 1rem;
-		background: linear-gradient(135deg, oklch(0.2 0.018 270), oklch(0.55 0.19 286));
-		color: oklch(0.98 0.006 270);
+		background: var(--strong);
+		color: var(--text-invert);
 		font-weight: 800;
 		letter-spacing: -0.04em;
 	}
@@ -590,7 +690,7 @@
 		margin-top: 0.25rem;
 		padding: 0.12rem 0.35rem 0.12rem 0;
 		background: transparent;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		cursor: pointer;
 		font-size: 0.9rem;
 		text-align: left;
@@ -604,7 +704,7 @@
 
 	.date-button-meta {
 		grid-column: 1 / -1;
-		color: oklch(0.56 0.028 270);
+		color: var(--text-subtle);
 		font-size: 0.72rem;
 		line-height: 1.1;
 	}
@@ -628,17 +728,17 @@
 		width: min(18rem, calc(100vw - 2rem));
 		max-height: min(20rem, 50vh);
 		overflow-y: auto;
-		border: 1px solid rgba(148, 163, 184, 0.28);
+		border: 1px solid var(--line);
 		border-radius: 1rem;
-		background: oklch(0.992 0.004 270);
-		box-shadow: 0 20px 50px rgba(15, 23, 42, 0.16);
+		background: var(--surface);
+		box-shadow: 0 20px 50px var(--shadow);
 		padding: 0.35rem;
 	}
 
 	.date-menu p {
 		margin: 0;
 		padding: 0.75rem;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		font-size: 0.86rem;
 	}
 
@@ -651,7 +751,7 @@
 		border: 0;
 		border-radius: 0.75rem;
 		background: transparent;
-		color: oklch(0.2 0.018 270);
+		color: var(--text);
 		cursor: pointer;
 		font: inherit;
 		padding: 0.65rem 0.75rem;
@@ -661,13 +761,13 @@
 	.date-option:hover,
 	.date-option:focus-visible,
 	.date-option[aria-selected='true'] {
-		background: oklch(0.948 0.028 286);
-		color: oklch(0.46 0.18 286);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 
 	.date-option small {
 		flex: 0 0 auto;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		font-size: 0.72rem;
 	}
 
@@ -675,12 +775,12 @@
 	.date-button:focus-visible,
 	.home-link:hover,
 	.home-link:focus-visible {
-		color: oklch(0.55 0.19 286);
+		color: var(--text);
 	}
 
 	.date-button:hover .date-button-meta,
 	.date-button:focus-visible .date-button-meta {
-		color: oklch(0.46 0.18 286);
+		color: var(--text);
 	}
 
 	.header-actions {
@@ -695,22 +795,22 @@
 	.header-actions button,
 	.home-link {
 		border-radius: 999px;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		font-size: 0.9rem;
 		text-decoration: none;
 	}
 
 	.header-actions button {
-		border: 1px solid rgba(148, 163, 184, 0.28);
-		background: oklch(0.985 0.006 270);
+		border: 1px solid var(--line);
+		background: var(--surface-soft);
 		cursor: pointer;
 		padding: 0.45rem 0.7rem;
 	}
 
 	.header-actions button:hover:not(:disabled),
 	.header-actions button:focus-visible:not(:disabled) {
-		background: oklch(0.948 0.028 286);
-		color: oklch(0.55 0.19 286);
+		background: var(--surface-hover);
+		color: var(--text);
 	}
 
 	.header-actions button:disabled {
@@ -718,12 +818,33 @@
 		opacity: 0.55;
 	}
 
+	.theme-toggle {
+		display: flex;
+		align-items: center;
+		gap: 0.15rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface-soft);
+		padding: 0.18rem;
+	}
+
+	.header-actions .theme-toggle button {
+		border: 0;
+		background: transparent;
+		padding: 0.34rem 0.6rem;
+	}
+
+	.header-actions .theme-toggle button[aria-pressed='true'] {
+		background: var(--strong);
+		color: var(--text-invert);
+	}
+
 	.dev-tool-status {
 		margin: 0;
-		border-bottom: 1px solid rgba(148, 163, 184, 0.18);
-		background: rgba(238, 242, 255, 0.72);
+		border-bottom: 1px solid var(--line);
+		background: var(--surface-translucent);
 		padding: 0.55rem 1.5rem;
-		color: oklch(0.55 0.19 286);
+		color: var(--text);
 		font-size: 0.85rem;
 		text-align: center;
 	}
@@ -737,7 +858,7 @@
 	}
 
 	.message-history:focus-visible {
-		outline: 3px solid rgba(79, 70, 229, 0.32);
+		outline: 3px solid var(--focus);
 		outline-offset: -3px;
 	}
 
@@ -754,17 +875,17 @@
 
 	.day-divider span {
 		border-radius: 999px;
-		background: rgba(241, 245, 249, 0.92);
+		background: var(--surface-translucent);
 		padding: 0.35rem 0.7rem;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		font-size: 0.78rem;
-		box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+		box-shadow: 0 8px 20px var(--shadow);
 	}
 
 	.empty-state {
 		margin: 4rem auto;
 		max-width: 24rem;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		text-align: center;
 	}
 
@@ -782,12 +903,12 @@
 		border-radius: 1.35rem;
 		background: linear-gradient(
 			90deg,
-			oklch(0.948 0.028 286) 0%,
-			oklch(0.982 0.006 270) 48%,
-			oklch(0.948 0.028 286) 100%
+			var(--surface-hover) 0%,
+			var(--surface-soft) 48%,
+			var(--surface-hover) 100%
 		);
 		background-size: 200% 100%;
-		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+		box-shadow: 0 6px 18px var(--shadow);
 		animation: skeleton-shimmer 1.6s ease-in-out infinite;
 	}
 
@@ -822,17 +943,17 @@
 
 	@keyframes date-jump-settle {
 		0% {
-			box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+			box-shadow: 0 6px 18px var(--shadow);
 		}
 
 		22% {
 			box-shadow:
-				0 0 0 3px oklch(0.72 0.14 286 / 0.24),
-				0 10px 24px rgba(15, 23, 42, 0.1);
+				0 0 0 3px var(--focus),
+				0 10px 24px var(--shadow);
 		}
 
 		100% {
-			box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+			box-shadow: 0 6px 18px var(--shadow);
 		}
 	}
 
@@ -867,14 +988,14 @@
 
 	.message-bubble {
 		border-radius: 1.35rem;
-		background: oklch(0.962 0.01 270);
+		background: var(--surface-muted);
 		padding: 0.75rem 0.9rem 0.55rem;
-		box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+		box-shadow: 0 6px 18px var(--shadow);
 	}
 
 	.message-row.user .message-bubble {
-		background: oklch(0.55 0.19 286);
-		color: oklch(0.98 0.006 270);
+		background: var(--text);
+		color: var(--text-invert);
 	}
 
 	.message-row.system .message-stack {
@@ -882,8 +1003,8 @@
 	}
 
 	.message-row.system .message-bubble {
-		background: rgba(226, 232, 240, 0.7);
-		color: oklch(0.49 0.035 270);
+		background: var(--surface-translucent);
+		color: var(--text-muted);
 		text-align: center;
 	}
 
@@ -900,7 +1021,7 @@
 		overflow: hidden;
 		border: 1px solid currentColor;
 		border-radius: 0.8rem;
-		background: oklch(0.98 0.006 270 / 0.18);
+		background: var(--reply-reference);
 		color: inherit;
 		cursor: pointer;
 		font: inherit;
@@ -923,7 +1044,7 @@
 
 	.message-bubble .reply-reference:hover,
 	.message-bubble .reply-reference:focus-visible {
-		background: oklch(0.99 0.006 270 / 0.28);
+		background: var(--reply-reference-hover);
 		opacity: 1;
 		outline: 2px solid currentColor;
 		outline-offset: 2px;
@@ -953,7 +1074,7 @@
 		border: 0;
 		border-radius: 999px;
 		background: transparent;
-		color: oklch(0.49 0.035 270);
+		color: var(--text-muted);
 		cursor: pointer;
 		font: inherit;
 		font-size: 0.78rem;
@@ -974,17 +1095,17 @@
 
 	.reply-button:hover,
 	.reply-button:focus-visible {
-		background: oklch(0.948 0.028 286);
-		color: oklch(0.55 0.19 286);
-		outline: 2px solid oklch(0.72 0.12 286 / 0.45);
+		background: var(--surface-hover);
+		color: var(--text);
+		outline: 2px solid var(--focus);
 		outline-offset: 2px;
 		transform: translateY(-1px);
 	}
 
 	.composer {
 		flex-wrap: wrap;
-		border-top: 1px solid rgba(148, 163, 184, 0.18);
-		background: oklch(0.992 0.004 270);
+		border-top: 1px solid var(--line);
+		background: var(--surface);
 	}
 
 	.reply-preview {
@@ -993,11 +1114,11 @@
 		align-items: center;
 		justify-content: space-between;
 		gap: 1rem;
-		border: 1px solid oklch(0.55 0.19 286 / 0.35);
+		border: 1px solid var(--focus);
 		border-radius: 1rem;
-		background: oklch(0.948 0.028 286);
+		background: var(--surface-hover);
 		padding: 0.6rem 0.75rem;
-		color: oklch(0.46 0.18 286);
+		color: var(--text);
 		font-size: 0.85rem;
 		touch-action: manipulation;
 	}
@@ -1024,7 +1145,7 @@
 	.reply-preview button {
 		border: 0;
 		background: transparent;
-		color: oklch(0.46 0.18 286);
+		color: var(--text);
 		cursor: pointer;
 		font: inherit;
 		font-weight: 700;
@@ -1032,7 +1153,7 @@
 
 	.reply-preview button:hover,
 	.reply-preview button:focus-visible {
-		outline: 2px solid oklch(0.55 0.19 286 / 0.42);
+		outline: 2px solid var(--focus);
 		outline-offset: 3px;
 	}
 
@@ -1041,23 +1162,23 @@
 		max-height: 9rem;
 		flex: 1;
 		resize: vertical;
-		border: 1px solid rgba(148, 163, 184, 0.35);
+		border: 1px solid var(--line-strong);
 		border-radius: 1.25rem;
 		padding: 0.78rem 1rem;
-		background: oklch(0.99 0.004 270);
-		box-shadow: inset 0 1px 2px oklch(0.2 0.035 270 / 0.04);
+		background: var(--input);
+		box-shadow: inset 0 1px 2px var(--inset);
 		font: inherit;
 	}
 
 	.composer textarea:focus {
-		border-color: oklch(0.68 0.15 286);
-		outline: 3px solid rgba(129, 140, 248, 0.25);
+		border-color: var(--strong);
+		outline: 3px solid var(--focus);
 	}
 
 	.composer button {
 		border-radius: 999px;
-		background: oklch(0.2 0.018 270);
-		color: oklch(0.98 0.006 270);
+		background: var(--text);
+		color: var(--text-invert);
 		cursor: pointer;
 		padding: 0.78rem 1rem;
 		font-weight: 700;
@@ -1066,8 +1187,8 @@
 	.composer button:hover:not(:disabled),
 	.composer button:focus-visible:not(:disabled) {
 		transform: translateY(-1px);
-		background: oklch(0.55 0.19 286);
-		box-shadow: 0 10px 24px rgba(79, 70, 229, 0.28);
+		background: var(--text);
+		box-shadow: 0 10px 24px var(--shadow);
 	}
 
 	.composer button:disabled {
