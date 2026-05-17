@@ -2,3 +2,4 @@
 *.swm
 .DS_Store
 .dev/
+.pi/
