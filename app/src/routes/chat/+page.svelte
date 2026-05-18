@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { browser, dev } from '$app/environment';
 	import { resolve } from '$app/paths';
+	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
+	import { Textarea } from '$lib/components/ui/textarea/index.js';
 	import { tick } from 'svelte';
 	import { useConvexClient, useQuery } from 'convex-svelte';
 	import { api } from '../../convex/_generated/api.js';
@@ -31,14 +36,14 @@
 	let devToolStatus = $state('');
 	let replyingToMessageId = $state<Id<'messages'>>();
 	let historyElement = $state<HTMLElement>();
-	let dateMenuElement = $state<HTMLElement>();
+	let composerTextarea = $state<HTMLTextAreaElement | null>(null);
 	let isDateMenuOpen = $state(false);
+	let isReplyPreviewOpen = $state<string>();
 	let activeDateKey = $state<string>();
 	let highlightedDateKey = $state<string>();
 	let hasPositionedInitialViewport = $state(false);
 	let themeMode = $state<'system' | 'light' | 'dark'>('system');
 	let systemPrefersDark = $state(false);
-	const dateMenuId = 'conversation-date-menu';
 
 	const dayFormatter = new Intl.DateTimeFormat('en', {
 		weekday: 'long',
@@ -93,6 +98,14 @@
 	$effect(() => {
 		if (!browser) return;
 		localStorage.setItem('is-chat-theme-mode', themeMode);
+	});
+
+	$effect(() => {
+		if (!browser) return;
+		document.documentElement.classList.toggle(
+			'dark',
+			themeMode === 'dark' || (themeMode === 'system' && systemPrefersDark)
+		);
 	});
 
 	$effect(() => {
@@ -225,21 +238,6 @@
 		replyingToMessageId = undefined;
 	}
 
-	function toggleDateMenu() {
-		isDateMenuOpen = !isDateMenuOpen;
-	}
-
-	function closeDateMenu() {
-		isDateMenuOpen = false;
-	}
-
-	function handleGlobalPointerDown(event: PointerEvent) {
-		if (!isDateMenuOpen) return;
-		const target = event.target;
-		if (target instanceof Node && dateMenuElement?.contains(target)) return;
-		closeDateMenu();
-	}
-
 	async function jumpToDate(day: MessageDay) {
 		activeDateKey = day.dateKey;
 		highlightedDateKey = day.dateKey;
@@ -270,23 +268,6 @@
 		}
 
 		activeDateKey = visibleDateKey;
-	}
-
-	async function handleDateKeydown(event: KeyboardEvent, day: MessageDay) {
-		if (event.key !== 'Enter' && event.key !== ' ') return;
-
-		event.preventDefault();
-		await jumpToDate(day);
-	}
-
-	function handleGlobalDateMenuKeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') closeDateMenu();
-	}
-
-	function handleDateMenuFocusOut(event: FocusEvent) {
-		const nextTarget = event.relatedTarget;
-		if (nextTarget instanceof Node && dateMenuElement?.contains(nextTarget)) return;
-		closeDateMenu();
 	}
 
 	function setThemeMode(mode: 'system' | 'light' | 'dark') {
@@ -325,8 +306,6 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleGlobalDateMenuKeydown} onpointerdown={handleGlobalPointerDown} />
-
 <svelte:head>
 	<title>Chat · Information Society</title>
 	<meta
@@ -344,45 +323,27 @@
 		<header class="chat-header">
 			<div class="agent-lockup">
 				<div class="agent-avatar" aria-hidden="true">IS</div>
-				<div
-					class="date-menu-anchor"
-					bind:this={dateMenuElement}
-					onfocusout={handleDateMenuFocusOut}
-				>
+				<div class="date-menu-anchor">
 					<h1 id="chat-title">Agent Chat</h1>
-					<button
+					<Button
+						variant="ghost"
 						class="date-button"
-						type="button"
-						aria-label={`Conversation date, ${currentDate}. ${currentDateSummary}. Open date menu`}
-						aria-haspopup="listbox"
 						aria-expanded={isDateMenuOpen}
-						aria-controls={dateMenuId}
-						onclick={toggleDateMenu}
+						aria-haspopup="menu"
+						aria-label={`Conversation date, ${currentDate}. ${currentDateSummary}. Open date menu`}
+						onclick={() => (isDateMenuOpen = !isDateMenuOpen)}
 					>
 						<span class="date-button-label">{currentDate}</span>
 						<span class="date-button-meta">{currentDateSummary}</span>
 						<span class="date-chevron" aria-hidden="true">⌄</span>
-					</button>
+					</Button>
 					{#if isDateMenuOpen}
-						<div
-							id={dateMenuId}
-							class="date-menu"
-							role="listbox"
-							aria-label="Conversation dates"
-							tabindex="-1"
-						>
+						<div class="date-menu-panel" role="menu" aria-label="Conversation dates">
 							{#if messageDays.length === 0}
 								<p>No messages yet</p>
 							{:else}
 								{#each messageDays as day (day.dateKey)}
-									<button
-										class="date-option"
-										type="button"
-										role="option"
-										aria-selected={day.dateKey === activeDateKey}
-										onclick={() => jumpToDate(day)}
-										onkeydown={(event) => handleDateKeydown(event, day)}
-									>
+									<button class="date-menu-item" type="button" onclick={() => jumpToDate(day)}>
 										<span>{day.label}</span>
 										<small>{day.messages.length} messages</small>
 									</button>
@@ -393,38 +354,50 @@
 				</div>
 			</div>
 			<div class="header-actions">
-				<div class="theme-toggle" aria-label="Appearance">
-					<button
-						type="button"
+				<ButtonGroup.Root aria-label="Appearance">
+					<Button
+						size="sm"
+						variant={themeMode === 'system' ? 'default' : 'outline'}
 						aria-pressed={themeMode === 'system'}
 						onclick={() => setThemeMode('system')}
 					>
-						Follow system
-					</button>
-					<button
-						type="button"
+						System
+					</Button>
+					<Button
+						size="sm"
+						variant={themeMode === 'light' ? 'default' : 'outline'}
 						aria-pressed={themeMode === 'light'}
 						onclick={() => setThemeMode('light')}
 					>
 						Light
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						size="sm"
+						variant={themeMode === 'dark' ? 'default' : 'outline'}
 						aria-pressed={themeMode === 'dark'}
 						onclick={() => setThemeMode('dark')}
 					>
 						Dark
-					</button>
-				</div>
+					</Button>
+				</ButtonGroup.Root>
 				{#if dev}
-					<button type="button" onclick={seedDevChat} disabled={isDevToolRunning}
-						>Seed dev chat</button
+					<Button
+						class="top-action-button"
+						variant="outline"
+						size="sm"
+						onclick={seedDevChat}
+						disabled={isDevToolRunning}>Seed dev chat</Button
 					>
-					<button type="button" onclick={clearDevChat} disabled={isDevToolRunning}
-						>Clear dev chat</button
+					<Button
+						class="top-action-button"
+						variant="outline"
+						size="sm"
+						onclick={clearDevChat}
+						disabled={isDevToolRunning}>Clear dev chat</Button
 					>
 				{/if}
-				<a class="home-link" href={resolve('/')}>Home</a>
+				<Button class="top-action-button" href={resolve('/')} variant="ghost" size="sm">Home</Button
+				>
 			</div>
 		</header>
 
@@ -443,14 +416,27 @@
 		>
 			{#if persistedMessages.isLoading}
 				<div class="message-skeletons" aria-label="Loading conversation">
-					<div class="skeleton-message assistant"></div>
-					<div class="skeleton-message user"></div>
-					<div class="skeleton-message assistant short"></div>
+					<Skeleton class="h-14 w-[min(72%,32rem)] rounded-2xl" />
+					<Skeleton class="ms-auto h-14 w-[min(58%,28rem)] rounded-2xl" />
+					<Skeleton class="h-14 w-[min(48%,22rem)] rounded-2xl" />
 				</div>
 			{:else if persistedMessages.error}
-				<p class="empty-state">Unable to load conversation. {persistedMessages.error.toString()}</p>
+				<Empty.Root class="mx-auto my-16 max-w-md">
+					<Empty.Header>
+						<Empty.Title>Unable to load conversation</Empty.Title>
+						<Empty.Description>{persistedMessages.error.toString()}</Empty.Description>
+					</Empty.Header>
+				</Empty.Root>
 			{:else if messageDays.length === 0}
-				<p class="empty-state">Start the conversation by sending a message.</p>
+				<Empty.Root class="mx-auto my-16 max-w-md">
+					<Empty.Header>
+						<Empty.Title>No messages yet</Empty.Title>
+						<Empty.Description>Send the first prompt to start this session.</Empty.Description>
+					</Empty.Header>
+					<Empty.Content>
+						<Button onclick={() => composerTextarea?.focus()}>Write a message</Button>
+					</Empty.Content>
+				</Empty.Root>
 			{:else}
 				{#each messageDays as day (day.dateKey)}
 					<div
@@ -474,14 +460,30 @@
 							<div class="message-stack">
 								<div class="message-bubble">
 									{#if message.replyingToMessage}
-										<button
-											class="reply-reference"
-											type="button"
-											onclick={() => jumpToMessage(message.replyingToMessage!)}
-											aria-label={`Jump to replied message: ${getReplyExcerpt(referencedMessage)}`}
+										<div
+											class="reply-reference-wrap"
+											role="presentation"
+											onpointerenter={() => (isReplyPreviewOpen = message.id)}
+											onpointerleave={() => (isReplyPreviewOpen = undefined)}
+											onfocusin={() => (isReplyPreviewOpen = message.id)}
+											onfocusout={() => (isReplyPreviewOpen = undefined)}
 										>
-											<span>↩ {getReplyLabel(referencedMessage)}</span>
-										</button>
+											<Button
+												variant="ghost"
+												size="sm"
+												class="reply-reference"
+												onclick={() => jumpToMessage(message.replyingToMessage!)}
+												aria-label={`Jump to replied message: ${getReplyExcerpt(referencedMessage)}`}
+											>
+												<span>↩ {getReplyLabel(referencedMessage)}</span>
+											</Button>
+											{#if isReplyPreviewOpen === message.id}
+												<div class="reply-hover-card" role="tooltip">
+													<p class="reply-hover-title">Reply context</p>
+													<p>{getReplyExcerpt(referencedMessage)}</p>
+												</div>
+											{/if}
+										</div>
 									{/if}
 									<p>{message.text}</p>
 									{#if message.status === 'pending'}
@@ -524,23 +526,29 @@
 						<strong>Replying to {replyTarget.role === 'user' ? 'you' : 'the agent'}</strong>
 						<span>{replyTarget.text}</span>
 					</div>
-					<button type="button" onclick={clearReplyTarget} aria-label="Cancel reply target"
-						>Clear</button
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						onclick={clearReplyTarget}
+						aria-label="Cancel reply target">Clear</Button
 					>
 				</div>
 			{/if}
 			<label class="sr-only" for="message-draft">Message the agent</label>
-			<textarea
+			<Textarea
 				id="message-draft"
+				bind:ref={composerTextarea}
 				bind:value={draft}
 				placeholder="Message the agent…"
-				rows="1"
+				rows={1}
 				aria-label="Message the agent"
 				onkeydown={handleComposerKeydown}
-			></textarea>
-			<button type="submit" disabled={!draft.trim() || isSending}>
+				class="min-h-11 flex-1 resize-y rounded-2xl"
+			/>
+			<Button type="submit" disabled={!draft.trim() || isSending}>
 				{isSending ? 'Sending…' : 'Send'}
-			</button>
+			</Button>
 		</form>
 	</section>
 </main>
@@ -632,9 +640,12 @@
 	}
 
 	.chat-header {
+		position: relative;
+		z-index: 30;
 		flex-wrap: wrap;
 		justify-content: space-between;
 		border-bottom: 1px solid var(--line);
+		background: var(--surface);
 		container-type: inline-size;
 	}
 
@@ -664,10 +675,7 @@
 		line-height: 1.1;
 	}
 
-	.date-button,
-	.home-link,
-	.header-actions button,
-	.composer button {
+	:global(.date-button) {
 		border: 0;
 		font: inherit;
 		transition:
@@ -681,10 +689,11 @@
 		min-width: 0;
 	}
 
-	.date-button {
+	:global(.date-button) {
 		display: inline-grid;
 		grid-template-columns: minmax(0, auto) auto;
 		align-items: center;
+		height: auto;
 		column-gap: 0.35rem;
 		row-gap: 0.05rem;
 		margin-top: 0.25rem;
@@ -715,15 +724,25 @@
 		transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
 	}
 
-	.date-button[aria-expanded='true'] .date-chevron {
+	:global(.date-button[aria-expanded='true'] .date-chevron) {
 		transform: rotate(180deg);
 	}
 
-	.date-menu {
+	:global(.date-button:hover),
+	:global(.date-button:focus-visible) {
+		color: var(--text);
+	}
+
+	:global(.date-button:hover .date-button-meta),
+	:global(.date-button:focus-visible .date-button-meta) {
+		color: var(--text);
+	}
+
+	.date-menu-panel {
 		position: absolute;
 		top: calc(100% + 0.5rem);
 		left: 0;
-		z-index: 5;
+		z-index: 20;
 		display: grid;
 		width: min(18rem, calc(100vw - 2rem));
 		max-height: min(20rem, 50vh);
@@ -735,14 +754,14 @@
 		padding: 0.35rem;
 	}
 
-	.date-menu p {
+	.date-menu-panel p {
 		margin: 0;
 		padding: 0.75rem;
 		color: var(--text-muted);
 		font-size: 0.86rem;
 	}
 
-	.date-option {
+	.date-menu-item {
 		display: flex;
 		width: 100%;
 		align-items: center;
@@ -758,83 +777,48 @@
 		text-align: left;
 	}
 
-	.date-option:hover,
-	.date-option:focus-visible,
-	.date-option[aria-selected='true'] {
+	.date-menu-item:hover,
+	.date-menu-item:focus-visible {
 		background: var(--surface-hover);
-		color: var(--text);
 	}
 
-	.date-option small {
-		flex: 0 0 auto;
+	.date-menu-item small {
 		color: var(--text-muted);
 		font-size: 0.72rem;
 	}
 
-	.date-button:hover,
-	.date-button:focus-visible,
-	.home-link:hover,
-	.home-link:focus-visible {
-		color: var(--text);
-	}
-
-	.date-button:hover .date-button-meta,
-	.date-button:focus-visible .date-button-meta {
-		color: var(--text);
-	}
-
 	.header-actions {
+		position: relative;
+		z-index: 31;
 		display: flex;
+		flex: 0 1 auto;
 		align-items: center;
 		justify-content: flex-end;
-		min-width: 0;
+		min-width: min(100%, 18rem);
+		max-width: 100%;
 		flex-wrap: wrap;
 		gap: 0.55rem;
+		isolation: isolate;
 	}
 
-	.header-actions button,
-	.home-link {
-		border-radius: 999px;
-		color: var(--text-muted);
-		font-size: 0.9rem;
-		text-decoration: none;
+	.header-actions :global([data-slot='button']),
+	.header-actions :global([data-slot='button-group']) {
+		position: relative;
+		z-index: 32;
+		display: inline-flex;
+		visibility: visible;
+		opacity: 1;
 	}
 
-	.header-actions button {
-		border: 1px solid var(--line);
-		background: var(--surface-soft);
-		cursor: pointer;
-		padding: 0.45rem 0.7rem;
-	}
-
-	.header-actions button:hover:not(:disabled),
-	.header-actions button:focus-visible:not(:disabled) {
-		background: var(--surface-hover);
+	.header-actions :global([data-slot='button']) {
+		min-width: max-content;
+		border-color: var(--line-strong);
+		background: var(--surface);
 		color: var(--text);
+		box-shadow: 0 4px 12px oklch(0 0 0 / 0.06);
 	}
 
-	.header-actions button:disabled {
-		cursor: not-allowed;
-		opacity: 0.55;
-	}
-
-	.theme-toggle {
-		display: flex;
-		align-items: center;
-		gap: 0.15rem;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		background: var(--surface-soft);
-		padding: 0.18rem;
-	}
-
-	.header-actions .theme-toggle button {
-		border: 0;
-		background: transparent;
-		padding: 0.34rem 0.6rem;
-	}
-
-	.header-actions .theme-toggle button[aria-pressed='true'] {
+	.header-actions :global([data-slot='button'][aria-pressed='true']) {
 		background: var(--strong);
 		color: var(--text-invert);
 	}
@@ -882,53 +866,12 @@
 		box-shadow: 0 8px 20px var(--shadow);
 	}
 
-	.empty-state {
-		margin: 4rem auto;
-		max-width: 24rem;
-		color: var(--text-muted);
-		text-align: center;
-	}
-
 	.message-skeletons {
 		display: grid;
 		min-height: 14rem;
 		align-content: start;
 		gap: 0.75rem;
 		padding-top: 2.5rem;
-	}
-
-	.skeleton-message {
-		width: min(72%, 32rem);
-		height: 3.7rem;
-		border-radius: 1.35rem;
-		background: linear-gradient(
-			90deg,
-			var(--surface-hover) 0%,
-			var(--surface-soft) 48%,
-			var(--surface-hover) 100%
-		);
-		background-size: 200% 100%;
-		box-shadow: 0 6px 18px var(--shadow);
-		animation: skeleton-shimmer 1.6s ease-in-out infinite;
-	}
-
-	.skeleton-message.user {
-		justify-self: end;
-		width: min(58%, 28rem);
-	}
-
-	.skeleton-message.short {
-		width: min(48%, 22rem);
-	}
-
-	@keyframes skeleton-shimmer {
-		0% {
-			background-position: 100% 0;
-		}
-
-		100% {
-			background-position: -100% 0;
-		}
 	}
 
 	.message-row {
@@ -1013,10 +956,41 @@
 		line-height: 1.45;
 	}
 
-	.message-bubble .reply-reference {
+	.reply-reference-wrap {
+		position: relative;
+		width: 100%;
+		max-width: 30rem;
+	}
+
+	.reply-hover-card {
+		position: absolute;
+		bottom: calc(100% + 0.45rem);
+		left: 0;
+		z-index: 10;
+		width: min(22rem, 70vw);
+		border: 1px solid var(--line);
+		border-radius: 0.9rem;
+		background: var(--surface);
+		box-shadow: 0 18px 38px var(--shadow);
+		padding: 0.85rem;
+		color: var(--text);
+		font-size: 0.86rem;
+	}
+
+	.reply-hover-title {
+		margin-bottom: 0.25rem !important;
+		font-weight: 750;
+	}
+
+	.reply-hover-card p:last-child {
+		color: var(--text-muted);
+	}
+
+	:global(.message-bubble .reply-reference) {
 		display: block;
 		width: 100%;
 		max-width: 30rem;
+		height: auto;
 		margin: 0 0 0.45rem;
 		overflow: hidden;
 		border: 1px solid currentColor;
@@ -1035,15 +1009,15 @@
 			background 160ms ease;
 	}
 
-	.message-bubble .reply-reference span {
+	:global(.message-bubble .reply-reference span) {
 		display: block;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
 	}
 
-	.message-bubble .reply-reference:hover,
-	.message-bubble .reply-reference:focus-visible {
+	:global(.message-bubble .reply-reference:hover),
+	:global(.message-bubble .reply-reference:focus-visible) {
 		background: var(--reply-reference-hover);
 		opacity: 1;
 		outline: 2px solid currentColor;
@@ -1157,45 +1131,6 @@
 		outline-offset: 3px;
 	}
 
-	.composer textarea {
-		min-height: 2.75rem;
-		max-height: 9rem;
-		flex: 1;
-		resize: vertical;
-		border: 1px solid var(--line-strong);
-		border-radius: 1.25rem;
-		padding: 0.78rem 1rem;
-		background: var(--input);
-		box-shadow: inset 0 1px 2px var(--inset);
-		font: inherit;
-	}
-
-	.composer textarea:focus {
-		border-color: var(--strong);
-		outline: 3px solid var(--focus);
-	}
-
-	.composer button {
-		border-radius: 999px;
-		background: var(--text);
-		color: var(--text-invert);
-		cursor: pointer;
-		padding: 0.78rem 1rem;
-		font-weight: 700;
-	}
-
-	.composer button:hover:not(:disabled),
-	.composer button:focus-visible:not(:disabled) {
-		transform: translateY(-1px);
-		background: var(--text);
-		box-shadow: 0 10px 24px var(--shadow);
-	}
-
-	.composer button:disabled {
-		cursor: not-allowed;
-		opacity: 0.45;
-	}
-
 	.sr-only {
 		position: absolute;
 		width: 1px;
@@ -1211,18 +1146,9 @@
 		}
 
 		.header-actions {
-			flex: 0 1 10.5rem;
-			align-self: flex-start;
+			flex: 1 1 100%;
+			justify-content: flex-start;
 			gap: 0.35rem;
-		}
-
-		.header-actions button {
-			padding: 0.4rem 0.55rem;
-			font-size: 0.78rem;
-		}
-
-		.home-link {
-			display: none;
 		}
 	}
 

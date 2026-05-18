@@ -1,4 +1,9 @@
 <script lang="ts">
+	import { browser } from '$app/environment';
+	import { Button } from '$lib/components/ui/button/index.js';
+	import * as Empty from '$lib/components/ui/empty/index.js';
+	import NetworkRecordForm from '$lib/components/network/NetworkRecordForm.svelte';
+
 	type CardKind = 'person' | 'organization';
 	type NetworkCard = {
 		id: string;
@@ -73,6 +78,8 @@
 	let draft = $state<NetworkCard | null>(null);
 	let rolodexElement = $state<HTMLElement>();
 	let scrollTop = $state(0);
+	let actionStatus = $state('');
+	let isActionsMenuOpen = $state(false);
 
 	let selected = $derived(selectedId ? cards.find((card) => card.id === selectedId) : undefined);
 
@@ -176,6 +183,15 @@
 		draft = null;
 	}
 
+	async function copyEmail(card: NetworkCard) {
+		if (!card.email || !browser) return;
+		await navigator.clipboard.writeText(card.email);
+		actionStatus = `Copied ${card.email}`;
+		window.setTimeout(() => {
+			if (actionStatus === `Copied ${card.email}`) actionStatus = '';
+		}, 1800);
+	}
+
 	const formatDate = (value?: string) =>
 		value
 			? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(
@@ -204,87 +220,137 @@
 		<p class="eyebrow">Personal network</p>
 		<h1 id="network-title">Network Rolodex</h1>
 		<p>Scroll to flip through people and institutions. Select a card to open the full record.</p>
+		{#if actionStatus}
+			<p class="action-status" aria-live="polite">{actionStatus}</p>
+		{/if}
 	</section>
 
-	<section class:has-selection={Boolean(selectedId)} class="rolodex-stage" aria-label="Network Rolodex" onwheel={handleFocusedWheel}>
-		<!-- svelte-ignore a11y_click_events_have_key_events -->
-		<div class="rolodex" bind:this={rolodexElement} onscroll={handleScroll} onclick={handleRolodexClick} aria-label="Scrollable 3D cards" role="presentation">
-			<div class="scroll-pad">
-				{#each cards as card, index (card.id)}
-					<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-					<article
-						class="network-card"
-						style={cardStyle(index, false)}
-						onclick={(event) => { event.stopPropagation(); focusCardAtIndex(index); }}
-						onkeydown={(event) => event.key === 'Enter' && focusCardAtIndex(index)}
-						tabindex="0"
-						role="button"
-					>
-						{#if editingId === card.id && draft}
-							<input class="title-input" bind:value={draft.name} aria-label="Name" />
-							<div class="edit-grid">
-								{#if draft.kind === 'person'}
-									<label>Where they work <input bind:value={draft.workplace} /></label>
-									<label>Role <input bind:value={draft.role} /></label>
-									<label>Last reached out <input type="date" bind:value={draft.lastReachedOut} /></label>
-									<label>Email <input bind:value={draft.email} /></label>
-								{:else}
-									<label>Institution type <input bind:value={draft.type} /></label>
-									<label>Location <input bind:value={draft.location} /></label>
-									<label>Last event <input bind:value={draft.lastEvent} /></label>
-								{/if}
-								<label class="wide">Notes <textarea bind:value={draft.notes}></textarea></label>
-							</div>
-							<div class="actions">
-								<button class="secondary" type="button" onclick={cancelEdit}>Cancel</button>
-								<button type="button" onclick={saveEdit}>Save changes</button>
-							</div>
-						{:else}
-							<div class="card-head">
-								<span>{card.kind === 'person' ? 'Person' : 'Place'}</span>
-								<small>{card.lastEvent ?? 'Manual entry'}</small>
-							</div>
-							<h2>{card.name}</h2>
-							{#if card.kind === 'person'}
-								<p>{card.role} · {card.workplace}</p>
-								<p class="quiet">Last reached out: {formatDate(card.lastReachedOut)}</p>
+	{#if cards.length === 0}
+		<Empty.Root class="mx-auto mt-16 max-w-md">
+			<Empty.Header>
+				<Empty.Title>No network records yet</Empty.Title>
+				<Empty.Description
+					>Add the first person or institution to start building the Rolodex.</Empty.Description
+				>
+			</Empty.Header>
+			<Empty.Content>
+				<Button>Add record</Button>
+			</Empty.Content>
+		</Empty.Root>
+	{:else}
+		<section
+			class:has-selection={Boolean(selectedId)}
+			class="rolodex-stage"
+			aria-label="Network Rolodex"
+			onwheel={handleFocusedWheel}
+		>
+			<div
+				class="rolodex"
+				bind:this={rolodexElement}
+				onscroll={handleScroll}
+				onclick={handleRolodexClick}
+				aria-label="Scrollable 3D cards"
+				role="presentation"
+			>
+				<div class="scroll-pad">
+					{#each cards as card, index (card.id)}
+						<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
+						<article
+							class="network-card"
+							style={cardStyle(index, false)}
+							onclick={(event) => {
+								event.stopPropagation();
+								focusCardAtIndex(index);
+							}}
+							onkeydown={(event) => event.key === 'Enter' && focusCardAtIndex(index)}
+							tabindex="0"
+							role="button"
+						>
+							{#if editingId === card.id && draft}
+								<NetworkRecordForm bind:draft oncancel={cancelEdit} onsave={saveEdit} />
 							{:else}
-								<p>{card.type}</p>
-								<p class="quiet">{card.location}</p>
+								<div class="card-head">
+									<span>{card.kind === 'person' ? 'Person' : 'Place'}</span>
+									<small>{card.lastEvent ?? 'Manual entry'}</small>
+								</div>
+								<h2>{card.name}</h2>
+								{#if card.kind === 'person'}
+									<p>{card.role} · {card.workplace}</p>
+									<p class="quiet">Last reached out: {formatDate(card.lastReachedOut)}</p>
+								{:else}
+									<p>{card.type}</p>
+									<p class="quiet">{card.location}</p>
+								{/if}
 							{/if}
-
-						{/if}
-					</article>
-				{/each}
+						</article>
+					{/each}
+				</div>
 			</div>
-		</div>
-	</section>
+		</section>
+	{/if}
 
 	{#if selected}
-		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<article class="network-card selected focus-card" onwheel={handleFocusedWheel}>
-			<button class="card-back-button" type="button" onclick={(event) => { event.stopPropagation(); clearSelection(); }} aria-label="Return to Rolodex">←</button>
+			<div class="selected-card-actions">
+				<Button
+					class="card-back-button"
+					variant="outline"
+					size="icon"
+					onclick={(event) => {
+						event.stopPropagation();
+						clearSelection();
+					}}
+					aria-label="Return to Rolodex">←</Button
+				>
+				{#if editingId !== selected.id}
+					<div class="record-actions-menu">
+						<Button
+							variant="outline"
+							size="icon"
+							aria-label="Record actions"
+							aria-haspopup="menu"
+							aria-expanded={isActionsMenuOpen}
+							onclick={() => (isActionsMenuOpen = !isActionsMenuOpen)}>•••</Button
+						>
+						{#if isActionsMenuOpen}
+							<div class="record-actions-panel" role="menu" aria-label="Record actions">
+								<button
+									type="button"
+									onclick={() => {
+										startEdit(selected);
+										isActionsMenuOpen = false;
+									}}>Edit</button
+								>
+								{#if selected.email}
+									<button
+										type="button"
+										onclick={() => {
+											copyEmail(selected);
+											isActionsMenuOpen = false;
+										}}>Copy email</button
+									>
+								{/if}
+								<hr />
+								<button
+									type="button"
+									onclick={() => {
+										clearSelection();
+										isActionsMenuOpen = false;
+									}}>Close record</button
+								>
+							</div>
+						{/if}
+					</div>
+				{/if}
+			</div>
 			{#if editingId === selected.id && draft}
-				<input class="title-input" bind:value={draft.name} aria-label="Name" />
-				<div class="edit-grid">
-					{#if draft.kind === 'person'}
-						<label>Where they work <input bind:value={draft.workplace} /></label>
-						<label>Role <input bind:value={draft.role} /></label>
-						<label>Last reached out <input type="date" bind:value={draft.lastReachedOut} /></label>
-						<label>Email <input bind:value={draft.email} /></label>
-					{:else}
-						<label>Institution type <input bind:value={draft.type} /></label>
-						<label>Location <input bind:value={draft.location} /></label>
-						<label>Last event <input bind:value={draft.lastEvent} /></label>
-					{/if}
-					<label class="wide">Notes <textarea bind:value={draft.notes}></textarea></label>
-				</div>
-				<div class="actions">
-					<button class="secondary" type="button" onclick={cancelEdit}>Cancel</button>
-					<button type="button" onclick={saveEdit}>Save changes</button>
-				</div>
+				<NetworkRecordForm bind:draft oncancel={cancelEdit} onsave={saveEdit} />
 			{:else}
-				<div class="card-head"><span>{selected.kind === 'person' ? 'Person' : 'Place'}</span><small>{selected.lastEvent ?? 'Manual entry'}</small></div>
+				<div class="card-head">
+					<span>{selected.kind === 'person' ? 'Person' : 'Place'}</span><small
+						>{selected.lastEvent ?? 'Manual entry'}</small
+					>
+				</div>
 				<h2>{selected.name}</h2>
 				{#if selected.kind === 'person'}
 					<p>{selected.role} · {selected.workplace}</p>
@@ -305,7 +371,6 @@
 					{/if}
 				</div>
 				<p class="notes">{selected.notes}</p>
-				<button class="edit-button" type="button" onclick={(event) => { event.stopPropagation(); startEdit(selected); }}>Edit</button>
 			{/if}
 		</article>
 	{/if}
@@ -317,7 +382,14 @@
 		min-width: 320px;
 		background: oklch(0.965 0 0);
 		color: oklch(0.18 0 0);
-		font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+		font-family:
+			Inter,
+			ui-sans-serif,
+			system-ui,
+			-apple-system,
+			BlinkMacSystemFont,
+			'Segoe UI',
+			sans-serif;
 	}
 
 	.network-page {
@@ -339,50 +411,245 @@
 		color: var(--text);
 	}
 
-	.intro { max-width: 760px; margin-bottom: 1.25rem; }
-	.eyebrow { margin: 0 0 .45rem; color: var(--text-muted); font-size: .78rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
-	h1 { margin: 0; font-size: clamp(2.6rem, 7vw, 6rem); line-height: .9; letter-spacing: -.06em; }
-	.intro p:last-child { max-width: 62ch; color: var(--text-muted); font-size: 1.05rem; line-height: 1.65; }
+	.intro {
+		max-width: 760px;
+		margin-bottom: 1.25rem;
+	}
+	.eyebrow {
+		margin: 0 0 0.45rem;
+		color: var(--text-muted);
+		font-size: 0.78rem;
+		font-weight: 800;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+	}
+	h1 {
+		margin: 0;
+		font-size: clamp(2.6rem, 7vw, 6rem);
+		line-height: 0.9;
+		letter-spacing: -0.06em;
+	}
+	.intro p {
+		max-width: 62ch;
+		color: var(--text-muted);
+		font-size: 1.05rem;
+		line-height: 1.65;
+	}
+	.action-status {
+		margin-top: 0.75rem;
+		font-size: 0.9rem;
+		font-weight: 700;
+	}
 
-	.rolodex-stage { position: relative; max-width: none; margin: 0; }
-	.rolodex { height: 70vh; min-height: 520px; overflow-y: auto; perspective: 1300px; perspective-origin: 50% 360px; scrollbar-color: var(--line-strong) transparent; }
-	.scroll-pad { position: relative; height: 1240px; padding-top: 80px; transform-style: preserve-3d; }
+	.rolodex-stage {
+		position: relative;
+		max-width: none;
+		margin: 0;
+	}
+	.rolodex {
+		height: 70vh;
+		min-height: 520px;
+		overflow-y: auto;
+		perspective: 1300px;
+		perspective-origin: 50% 360px;
+		scrollbar-color: var(--line-strong) transparent;
+	}
+	.scroll-pad {
+		position: relative;
+		height: 1240px;
+		padding-top: 80px;
+		transform-style: preserve-3d;
+	}
 
-	.network-card { position: absolute; top: 80px; left: 50%; z-index: var(--z); width: min(82vw, 720px); min-height: 148px; box-sizing: border-box; padding: 1.25rem 1.35rem 1.5rem; transform: translateX(-50%) translateY(calc(var(--slot) * 188px + var(--pull-forward, 0px))) translateZ(var(--depth)) rotateX(var(--rotation)); transform-origin: 50% 100%; transform-style: preserve-3d; cursor: pointer; border: 1px solid var(--line); border-radius: 1.05rem; background: var(--surface); box-shadow: 0 20px 50px var(--shadow); transition: min-height 240ms cubic-bezier(.22,1,.36,1), background 160ms ease, filter 180ms ease, opacity 180ms ease, transform 220ms cubic-bezier(.22,1,.36,1); }
-	.network-card.selected { position: fixed; top: 50vh; left: 50vw; z-index: 120; width: min(88vw, 780px); max-height: min(78vh, 680px); min-height: 470px; overflow: auto; background: var(--surface); border-color: var(--line-strong); box-shadow: 0 34px 90px oklch(0.16 0 0 / 0.22); transform: translate(-50%, -50%) rotateX(0deg) !important; }
-	.focus-card { cursor: default; }
-	.has-selection .network-card:not(.selected) { filter: blur(2.5px); opacity: .46; }
-	.network-card:hover { background: var(--surface-soft); }
-	.has-selection .network-card:not(.selected):hover { filter: blur(1.2px); opacity: .7; }
+	.network-card {
+		position: absolute;
+		top: 80px;
+		left: 50%;
+		z-index: var(--z);
+		width: min(82vw, 720px);
+		min-height: 148px;
+		box-sizing: border-box;
+		padding: 1.25rem 1.35rem 1.5rem;
+		transform: translateX(-50%) translateY(calc(var(--slot) * 188px + var(--pull-forward, 0px)))
+			translateZ(var(--depth)) rotateX(var(--rotation));
+		transform-origin: 50% 100%;
+		transform-style: preserve-3d;
+		cursor: pointer;
+		border: 1px solid var(--line);
+		border-radius: 1.05rem;
+		background: var(--surface);
+		box-shadow: 0 20px 50px var(--shadow);
+		transition:
+			min-height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+			background 160ms ease,
+			filter 180ms ease,
+			opacity 180ms ease,
+			transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+	}
+	.network-card.selected {
+		position: fixed;
+		top: 50vh;
+		left: 50vw;
+		z-index: 120;
+		width: min(88vw, 780px);
+		max-height: min(78vh, 680px);
+		min-height: 470px;
+		overflow: auto;
+		background: var(--surface);
+		border-color: var(--line-strong);
+		box-shadow: 0 34px 90px oklch(0.16 0 0 / 0.22);
+		transform: translate(-50%, -50%) rotateX(0deg) !important;
+	}
+	.focus-card {
+		cursor: default;
+	}
+	.has-selection .network-card:not(.selected) {
+		filter: blur(2.5px);
+		opacity: 0.46;
+	}
+	.network-card:hover {
+		background: var(--surface-soft);
+	}
+	.has-selection .network-card:not(.selected):hover {
+		filter: blur(1.2px);
+		opacity: 0.7;
+	}
 
-	.card-head { display: flex; justify-content: space-between; gap: 1rem; color: var(--text-muted); font-size: .72rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
-	h2, .title-input { margin: 1.35rem 0 .45rem; font-size: clamp(2rem, 5vw, 4.2rem); line-height: .92; letter-spacing: -.055em; }
-	.network-card p { margin: .25rem 0; font-size: 1.02rem; }
-	.quiet, .notes { color: var(--text-muted); }
+	.card-head {
+		display: flex;
+		justify-content: space-between;
+		gap: 1rem;
+		color: var(--text-muted);
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+	}
+	h2 {
+		margin: 1.35rem 0 0.45rem;
+		font-size: clamp(2rem, 5vw, 4.2rem);
+		line-height: 0.92;
+		letter-spacing: -0.055em;
+	}
+	.network-card p {
+		margin: 0.25rem 0;
+		font-size: 1.02rem;
+	}
+	.quiet,
+	.notes {
+		color: var(--text-muted);
+	}
 
-	.expanded-fields, .edit-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .75rem; margin-top: 1.35rem; }
-	.expanded-fields div, label { display: grid; gap: .42rem; border: 1px solid var(--line); border-radius: .9rem; background: var(--surface-soft); padding: .85rem; color: var(--text-muted); font-size: .72rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-	.expanded-fields strong { color: var(--text); font-size: .95rem; letter-spacing: 0; text-transform: none; }
-	.notes { max-width: 64ch; margin-top: 1.25rem; line-height: 1.65; }
+	.expanded-fields {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 0.75rem;
+		margin-top: 1.35rem;
+	}
+	.expanded-fields div {
+		display: grid;
+		gap: 0.42rem;
+		border: 1px solid var(--line);
+		border-radius: 0.9rem;
+		background: var(--surface-soft);
+		padding: 0.85rem;
+		color: var(--text-muted);
+		font-size: 0.72rem;
+		font-weight: 800;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+	}
+	.expanded-fields strong {
+		color: var(--text);
+		font-size: 0.95rem;
+		letter-spacing: 0;
+		text-transform: none;
+	}
+	.notes {
+		max-width: 64ch;
+		margin-top: 1.25rem;
+		line-height: 1.65;
+	}
 
-	.edit-button { position: absolute; right: 1.25rem; bottom: 1.25rem; }
-	.actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; }
-	button:not(.network-card):not(.focus-dismiss):not(.card-back-button) { border: 0; border-radius: 999px; background: var(--strong); padding: .8rem 1.1rem; color: var(--text-invert); font-weight: 800; cursor: pointer; }
-	button.focus-dismiss { position: fixed; inset: 0; z-index: 90; display: block; width: 100vw; height: 100vh; border: 0; border-radius: 0; background: transparent; padding: 0; appearance: none; cursor: default; }
-	button.card-back-button { position: absolute; top: 1rem; left: 1rem; z-index: 3; display: grid; width: 2.45rem; height: 2.45rem; place-items: center; padding: 0; border: 1px solid var(--line); border-radius: 999px; background: var(--surface-soft); color: var(--text); box-shadow: none; font-weight: 800; cursor: pointer; }
+	.selected-card-actions {
+		position: absolute;
+		top: 1rem;
+		right: 1rem;
+		left: 1rem;
+		z-index: 3;
+		display: flex;
+		justify-content: space-between;
+		gap: 0.75rem;
+		pointer-events: none;
+	}
+	.selected-card-actions :global(button) {
+		pointer-events: auto;
+	}
+	.record-actions-menu {
+		position: relative;
+		pointer-events: auto;
+	}
+	.record-actions-panel {
+		position: absolute;
+		top: calc(100% + 0.45rem);
+		right: 0;
+		z-index: 4;
+		display: grid;
+		min-width: 11rem;
+		border: 1px solid var(--line);
+		border-radius: 0.9rem;
+		background: var(--surface);
+		box-shadow: 0 18px 38px var(--shadow);
+		padding: 0.35rem;
+	}
+	.record-actions-panel button {
+		border: 0;
+		border-radius: 0.65rem;
+		background: transparent;
+		color: var(--text);
+		cursor: pointer;
+		font: inherit;
+		padding: 0.55rem 0.7rem;
+		text-align: left;
+	}
+	.record-actions-panel button:hover,
+	.record-actions-panel button:focus-visible {
+		background: var(--surface-soft);
+	}
+	.record-actions-panel hr {
+		width: 100%;
+		border: 0;
+		border-top: 1px solid var(--line);
+		margin: 0.25rem 0;
+	}
+	button.focus-dismiss {
+		position: fixed;
+		inset: 0;
+		z-index: 90;
+		display: block;
+		width: 100vw;
+		height: 100vh;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+		padding: 0;
+		appearance: none;
+		cursor: default;
+	}
 	.network-card.selected .card-head,
-	.network-card.selected h2,
-	.network-card.selected .title-input { margin-left: 3.25rem; }
-	button.secondary { background: var(--surface-muted); color: var(--text); }
-
-	input, textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: .75rem; background: var(--surface); padding: .7rem; color: var(--text); font: inherit; }
-	.title-input { border: 0; padding: 0; font-weight: 800; }
-	textarea { min-height: 110px; resize: vertical; }
-	.wide { grid-column: 1 / -1; }
+	.network-card.selected h2 {
+		margin-left: 3.25rem;
+	}
 
 	@media (max-width: 760px) {
-		.rolodex { height: 74vh; }
-		.expanded-fields, .edit-grid { grid-template-columns: 1fr; }
-		.network-card.selected { min-height: 620px; }
+		.rolodex {
+			height: 74vh;
+		}
+		.expanded-fields {
+			grid-template-columns: 1fr;
+		}
+		.network-card.selected {
+			min-height: 620px;
+		}
 	}
 </style>
