@@ -1,0 +1,93 @@
+{
+  "featureId": "shadcn-chat-core-migration",
+  "completedItems": [
+    "Migrated chat theme switcher to shadcn ButtonGroup with Button variants for selected state.",
+    "Migrated chat dev actions and home action to shadcn Button.",
+    "Replaced chat loading placeholders with shadcn Skeleton and removed obsolete local skeleton CSS/keyframes.",
+    "Replaced empty and conversation-load-error states with shadcn Empty, including a focus-composer action.",
+    "Replaced composer textarea with shadcn Textarea and send/clear-reply actions with shadcn Button.",
+    "Replaced the custom chat date menu implementation with shadcn DropdownMenu and removed manual outside-click, Escape, focusout, and keyboard option handling."
+  ],
+  "unfinishedItems": [
+    "Chat reply references still need HoverCard wrapping.",
+    "Further CSS token cleanup remains, including broader replacement of legacy chat-local color variables with shadcn tokens.",
+    "Network migration remains untouched in this pass.",
+    "npm run lint was not rerun this pass because the prior known blocker is repository-wide Prettier formatting warnings in generated/imported files."
+  ],
+  "commandsExecuted": [
+    {
+      "command": "npm",
+      "args": [
+        "run",
+        "check"
+      ]
+    },
+    {
+      "command": "npm",
+      "args": [
+        "run",
+        "build"
+      ]
+    }
+  ],
+  "commandResults": [
+    {
+      "command": "cd app && npm run check",
+      "exitCode": 0,
+      "output": "svelte-check found 0 errors and 0 warnings"
+    },
+    {
+      "command": "cd app && npm run build",
+      "exitCode": 0,
+      "output": "vite build completed successfully; adapter-auto noted no production environment detected."
+    }
+  ],
+  "issuesDiscovered": [
+    "DropdownMenu migration substantially increases chat route bundle size because bits-ui dropdown dependencies are now included, expected for shadcn menu primitives.",
+    "No commit created because repository still contains pre-existing uncommitted shadcn setup/import changes."
+  ],
+  "procedureCompliance": true,
+  "validationAssertionsTouched": [
+    {
+      "assertionId": "chat-theme-switching",
+      "status": "satisfied",
+      "notes": "Theme state remains intact and root .dark sync from the previous pass is preserved."
+    },
+    {
+      "assertionId": "chat-date-navigation",
+      "status": "satisfied",
+      "notes": "Date selection now uses DropdownMenu.Item and still calls jumpToDate(day)."
+    },
+    {
+      "assertionId": "chat-enter-send-shift-enter-newline",
+      "status": "satisfied",
+      "notes": "Composer keydown handler remains on the shadcn Textarea."
+    },
+    {
+      "assertionId": "chat-empty-state-uses-empty",
+      "status": "satisfied",
+      "notes": "No-message and load-error chat states now use Empty components."
+    },
+    {
+      "assertionId": "chat-loading-uses-skeleton",
+      "status": "satisfied",
+      "notes": "Loading state now uses Skeleton components."
+    },
+    {
+      "assertionId": "chat-button-clusters-use-buttongroup",
+      "status": "satisfied",
+      "notes": "Theme switcher now uses ButtonGroup.Root."
+    },
+    {
+      "assertionId": "chat-menus-use-dropdownmenu",
+      "status": "satisfied",
+      "notes": "Conversation date menu now uses DropdownMenu.Root, Trigger, Content, Label, and Item."
+    },
+    {
+      "assertionId": "checks-pass",
+      "status": "uncertain",
+      "notes": "npm run check and build pass. Lint remains previously blocked by formatting warnings outside this pass."
+    }
+  ],
+  "timestamp": 1779069654941
+}

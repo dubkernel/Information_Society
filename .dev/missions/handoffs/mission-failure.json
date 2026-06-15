@@ -1,0 +1,13 @@
+{
+  "featureId": "mission-failure",
+  "completedItems": [],
+  "unfinishedItems": [],
+  "commandsExecuted": [],
+  "commandResults": [],
+  "issuesDiscovered": [
+    "Mission complete"
+  ],
+  "procedureCompliance": true,
+  "validationAssertionsTouched": [],
+  "timestamp": 1779072049157
+}

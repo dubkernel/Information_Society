@@ -1,0 +1,15 @@
+{
+  "type": "scrutiny",
+  "milestoneId": "m2",
+  "findings": [
+    {
+      "severity": "minor",
+      "category": "code-quality",
+      "description": "`npm run lint` completed with exit code 0, but ESLint reported four warnings for unused eslint-disable directives in generated Convex files. These are generated-file cleanup warnings and do not block the milestone assertions.",
+      "location": "app/src/convex/_generated/{api.js,dataModel.d.ts,server.d.ts,server.js}",
+      "assertionId": "quality-commands-pass"
+    }
+  ],
+  "overallStatus": "pass",
+  "timestamp": 1778940349767
+}

@@ -1,0 +1,67 @@
+{
+  "featureId": "chat-dev-data-tools",
+  "completedItems": [
+    "Updated development seed and clear mutations to operate only within the current authenticated/anonymous scoped user session instead of a global shared dev user.",
+    "Added server-side development gating for destructive seed/clear utilities: they require a dev Convex deployment or explicit CHAT_DEV_TOOLS_ENABLED=true.",
+    "Kept confirmation-string validators on destructive mutations and the Svelte UI dev-only buttons.",
+    "Seeded messages continue to span multiple dates and are inserted through validated Convex mutations using bounded indexed cleanup."
+  ],
+  "unfinishedItems": [
+    "Manual seed/clear verification against a running Convex dev deployment was not performed."
+  ],
+  "commandsExecuted": [
+    {
+      "command": "cd app && npm run check"
+    },
+    {
+      "command": "cd app && npm run lint"
+    },
+    {
+      "command": "cd app && npm run build"
+    }
+  ],
+  "commandResults": [
+    {
+      "command": "cd app && npm run check",
+      "exitCode": 0,
+      "output": "svelte-check found 0 errors and 0 warnings"
+    },
+    {
+      "command": "cd app && npm run lint",
+      "exitCode": 0,
+      "output": "Prettier passed and ESLint exited 0; generated Convex files still emit four unused eslint-disable warnings."
+    },
+    {
+      "command": "cd app && npm run build",
+      "exitCode": 0,
+      "output": "Production build completed successfully."
+    }
+  ],
+  "issuesDiscovered": [
+    "Manual dev data tooling requires Convex env support (`CONVEX_DEPLOYMENT` beginning with `dev:` or `CHAT_DEV_TOOLS_ENABLED=true`)."
+  ],
+  "procedureCompliance": true,
+  "validationAssertionsTouched": [
+    {
+      "assertionId": "dev-wipe-chat-data",
+      "status": "satisfied",
+      "notes": "clearDevData deletes scoped sessions/messages with bounded indexed reads."
+    },
+    {
+      "assertionId": "dev-seed-mock-chat",
+      "status": "satisfied",
+      "notes": "seedDevData creates realistic alternating user/assistant mock data."
+    },
+    {
+      "assertionId": "dev-tools-safe-gated",
+      "status": "satisfied",
+      "notes": "Destructive utilities are server-gated to dev deployment/explicit env and retain literal confirmation validators."
+    },
+    {
+      "assertionId": "seed-supports-date-navigation",
+      "status": "satisfied",
+      "notes": "Seed data spans four days for date navigation testing."
+    }
+  ],
+  "timestamp": 1778890975565
+}
